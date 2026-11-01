@@ -140,22 +140,23 @@ Without it the UI says so instead of inventing data.
 
 Android Auto does not trust an ADB-sideloaded Car App Library app. The reliable
 private route is **Play Internal App Sharing**: it installs the build from Play,
-without a public listing or review, and accepts a debuggable APK.
+without a public listing or review, and accepts a debug APK or signed AAB.
 
 1. In Play Console, create an app with package name `com.omarchy.auto`.
 2. **Test and release → Internal app sharing**, upload
-   `auto/build/outputs/apk/debug/auto-debug.apk`.
-3. Copy the sharing link. On the phone, uninstall the debug `com.omarchy.auto`
-   package first, then open the link and install it from Play.
+   `release/omarchy-auto-0.1.3-aa-release.aab`.
+3. Copy the sharing link. A Play-installed 0.1.1 can update in place; if the
+   phone has an ADB-signed copy, uninstall it first, then open the link and
+   install from Play.
 4. Open **Omarchy Auto setup** and grant notification access, location, and the
    service notification. [Setup screen](docs/img/setup-1280x720.png).
 5. Connect the phone to the car over USB and launch **Omarchy Auto** from the
    Android Auto launcher. Unknown sources is not required for the Play-installed
    build.
 
-The debug APK is re-signed by Internal App Sharing, so the old ADB-installed
-copy must be removed first. This is still a private test app; it is not a public
-release.
+Internal App Sharing re-signs the upload. This is still a private test app; it
+is not a public release. The 0.1.3 AAB includes MapLibre native libraries and,
+when built with `-Pomarchy.includeLocalAssets=true`, the local-only wallpaper.
 
 The car app uses the Car App Library **NAVIGATION** category. It draws the five
 tiles into `NavigationTemplate`'s map surface through
