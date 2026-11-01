@@ -46,3 +46,14 @@ captures/
 
 # Local, uncommitted wallpaper assets
 local-assets/
+
+# Signing material (keep outside the repo)
+keystore.properties
+*.p12
+*.pem
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
