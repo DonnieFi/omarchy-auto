@@ -1,7 +1,38 @@
 # References
 
 Links and claims checked on 2026-11-01. Everything here can change; re-check
-before Phase 6, especially Android Auto and aarch64 support.
+before the car-hardware acceptance test, especially Android Auto policy and
+aarch64 support.
+
+## Android v1
+
+- [Car App Library](https://developer.android.com/training/cars/apps/library) —
+  templates, categories, and the host model for Android Auto and Android
+  Automotive OS. The library is Apache-2.0.
+- [Navigation apps](https://developer.android.com/training/cars/apps/navigation) —
+  `NAVIGATION` category, `NavigationTemplate`, and the map surface.
+- [Access the surface](https://developer.android.com/training/cars/apps/navigation#access-surface) —
+  `androidx.car.app.ACCESS_SURFACE` and `AppManager.setSurfaceCallback`.
+- [Test Android apps for cars](https://developer.android.com/training/cars/testing) —
+  Desktop Head Unit, Android Auto developer mode, and the "Unknown sources"
+  setting. The same page notes that Unknown sources applies to media, messaging,
+  and parked apps but not necessarily to Car App Library apps; verify current
+  policy before promising sideloaded car testing.
+- [Android Auto Desktop Head Unit](https://developer.android.com/training/cars/testing/desktop-head-unit) —
+  host emulator used for development. The local emulator image's Android Auto
+  package is a Play Store stub, so DHU could not be exercised here.
+- [MediaSessionManager](https://developer.android.com/reference/android/media/session/MediaSessionManager) —
+  active-session discovery, which requires notification-listener access on
+  modern Android.
+- [NotificationListenerService](https://developer.android.com/reference/android/service/notification/NotificationListenerService) —
+  notification access and `activeNotifications`.
+- [LocationManager](https://developer.android.com/reference/android/location/LocationManager) —
+  GPS provider and speed. Car App Library location should use a foreground
+  service for reliable background updates.
+- [Sideloaded navigation app report](https://support.google.com/androidauto/thread/444013881/sideloaded-navigation-app-not-showing-in-android-auto-launcher-with-unknown-sources-enabled)
+  — a June 2026 field report that sideloaded Car App Library navigation apps
+  stopped appearing in AA/DHU even with Unknown sources enabled. This is a
+  community report, not a contract; test the target phone/car.
 
 ## Design reference
 
@@ -11,7 +42,7 @@ before Phase 6, especially Android Auto and aarch64 support.
   it for visual grammar, themes, and interaction patterns, not as a codebase to
   embed.
 
-## Host and hardware
+## Linux future path
 
 - [Omarchy releases](https://github.com/omacom/omarchy/releases) — upstream now
   publishes aarch64 images alongside x86_64.

@@ -1,0 +1,20 @@
+<resources>
+    <style name="OmarchyAppTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:windowBackground">#1a1b26</item>
+        <item name="android:colorAccent">#7aa2f7</item>
+        <item name="android:statusBarColor">#1a1b26</item>
+        <item name="android:navigationBarColor">#1a1b26</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+
+    <style name="OmarchySetupTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:windowBackground">#1a1b26</item>
+        <item name="android:colorAccent">#7aa2f7</item>
+        <item name="android:statusBarColor">#1a1b26</item>
+        <item name="android:navigationBarColor">#1a1b26</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

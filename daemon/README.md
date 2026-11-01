@@ -1,5 +1,8 @@
 # Daemon
 
+> **Future Linux path.** Android v1 does not use this daemon; the two APKs read
+> live data directly. This is retained for the Quickshell/car-computer path.
+
 `omarchy-drived` is the system integration layer between the car shell and the
 outside world. It does not draw anything. It owns the things a QML view should
 not touch directly: D-Bus, BlueZ, NetworkManager, UPower, OBD-II, GPS, and the

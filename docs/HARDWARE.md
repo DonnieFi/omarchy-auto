@@ -1,16 +1,19 @@
 # Hardware
 
-## The short answer
+> **Nov 1, 2026 redirect:** v1 runs on the car's existing Android Auto screen
+> from an Android phone. No Linux hardware is required for the demo. This
+> document is retained for the future Linux/Quickshell path.
 
-"Something like OmarchyTV as an app, prototype it, then take it to the head
-unit" is the **portable Qt Quick app** path — not an Android APK.
+## Current answer
 
-- Build the shell as a Qt Quick app. It runs as a window on a desktop today.
-- Run the same app on the Tab 4 with the ARMarchy Qt runtime.
-- Later, run it on a Linux car computer (Pi 5 or x86) with Quickshell/Hyprland.
+V1 is **Android**: a Car App Library navigation app on the phone, projected to
+the car's existing Android Auto screen over USB, plus a phone launcher APK. See
+[`BRIEF.md`](BRIEF.md) and ADR-0008. The Linux hardware discussion below is
+future work.
 
-That is closest to **"Tablet bench → Pi 5/x86 car"** in the earlier options.
-The hardware decision is deliberately deferred; the app is portable.
+The earlier "like OmarchyTV as an app, prototype it, then take it to the head
+unit" question was answered with the portable Qt Quick path. The redirect
+changes that for v1: Android is faster to a real car demo.
 
 If "like OmarchyTV as an app" means an actual Android launcher APK, that is the
 **Android head unit** path: a different project, with Android underneath instead

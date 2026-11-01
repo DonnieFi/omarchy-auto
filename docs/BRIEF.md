@@ -1,261 +1,179 @@
-# Omarchy Auto — product brief
+# Omarchy Auto — product brief (Android v1)
+
+**Redirect, 2026-11-01.** The v1 target is Android, not a Linux head unit. The
+Linux/Quickshell plan is preserved in
+[`archive/BRIEF-linux-2026-11-01.md`](archive/BRIEF-linux-2026-11-01.md) and in
+`../shell/` as future work. ADR-0008 records the switch and the renderer choice.
 
 ## Summary
 
-A touch-first car head-unit UI in the visual language of Omarchy, built as a
-portable Qt Quick app. Five tiles: Drive, Media, Comms, Vehicle, Home. The
-phone supplies the data and connectivity through a companion app; the car
-computer supplies the screen, sensors, and audio.
+A real, filmable demo of an OmarchyTV-styled five-tile UI on a car's Android
+Auto screen over USB, plus the same UI as an Android phone launcher. A Kotlin
+Canvas renderer is shared by both targets so themes, layout, and live data stay
+identical.
 
-The project starts as a desktop window, moves to the ARMv7 Galaxy Tab 4 as a
-bench prototype, and then to a Linux car computer (Raspberry Pi 5 or x86 mini
-PC). Android Auto is not required for v1.
-
-## The insight
-
-"Omarchy on Android Auto" is the wrong direction. Android Auto is a projection
-protocol with a Google/OEM-controlled template runtime. Third-party apps get
-templates, not a launcher, whole-screen composition, or theme control.
-Omarchy's pixels can
-only live on the host side.
-
-So the buildable version is **Android Auto inside Omarchy**:
-
-- Omarchy owns the screen, the interaction model, and the visual language.
-- The phone is a brain: media, notifications, GPS, connectivity.
-- Android Auto, if used at all, is a data source behind the Omarchy UI — not
-  the UI itself.
-
-That is also the more interesting project: Google's brain, Omarchy's face.
-
-## Users and use cases
-
-Primary: the owner of an older car with a plain dashboard, who wants a modern,
-glanceable car interface without buying a new head unit.
-
-Scenarios:
-
-- Daily commute: media, notifications, next turn, vehicle status.
-- Weekend drive: navigation, weather, music, no phone fiddling.
-- Parked: settings, theme changes, Home Assistant / garage controls.
-- Bench: develop and demo the shell on a desk or tablet.
+The car UI is a Car App Library **navigation app**: it gets Android Auto's map
+surface and draws the five tiles itself. The host still owns the template chrome
+and action strip. It is not possible to replace Android Auto's launcher or skin
+the host UI.
 
 ## v1 scope
 
 In:
 
-- A Qt Quick shell with five tiles and a Waybar-style top bar.
-- Theme switching across a small Omarchy palette set.
-- Responsive 1280×800 landscape and 800×1280 portrait layouts.
-- A daemon that exposes media, notifications, GPS, and OBD-II as QML models.
-- An Android companion app that streams notifications, media metadata,
-  location, and navigation handoff over Wi-Fi.
-- Power, mount, audio, and ignition/suspend behavior for a bench-to-car install.
+- Android Auto app (`com.omarchy.auto`) with a
+  `NavigationTemplate` + `AppManager.setSurfaceCallback`.
+- Phone launcher APK (`com.omarchy.auto.launcher`) with the same five tiles,
+  launching real apps and returning on Back.
+- Five tiles: Drive, Media, Comms, Vehicle, Home.
+- Four Omarchy themes, one-tap switch from the AA action strip, the canvas top
+  bar, and the Home theme chips.
+- Live clock and theme.
+- Live now playing from MediaSession, including metadata, art, progress, and
+  play/pause state (read-only).
+- Live notifications from NotificationListenerService.
+- Live GPS speed from LocationManager.
+- Vehicle tile stays mock with a visible `MOCK` label until OBD-II.
+- Debug-signed APKs from one documented command.
 
-Out (deliberately):
+Out:
 
-- Android Auto pixel projection.
-- Phone calls and voice assistant routing through the head unit.
-- Reverse camera, dashcam, steering-wheel controls.
-- Full turn-by-turn routing on the head unit.
-- A plugin marketplace. The five tiles are built in; a plugin API comes later.
-- A head-unit replacement that integrates with the car's CAN bus, amplifier,
-  climate controls, or factory display.
+- Play Store submission, production signing, release distribution.
+- Calls/voice routing, notification quick reply, media transport commands.
+- OBD-II, reverse camera, CAN bus, steering-wheel controls.
+- Linux head-unit installation in v1.
+- Pixel projection of Google Maps inside the Omarchy UI.
 
-## Experience
+## Rendering decision
 
-### Design rules
+**Kotlin + Android Canvas, shared by the car surface and the phone View.**
 
-- **Steal the language, not the window manager.** OmarchyTV's tiling grammar
-  becomes a fixed five-tile grid. Free-floating windows are hostile in a moving
-  car.
-- 2px borders, btop-style cut-out legends, monospace type, sharp corners.
-- A Waybar-style top bar: time, temperature, connectivity, phone battery,
-  volume, theme.
-- One expanded tile at a time; a clear back action.
-- No blur, shadows, or shader effects in the v1 shell — the tablet renders
-  with Qt Quick's software backend.
-- 64dp minimum touch targets; primary controls in the lower half of the screen.
-- Day and night palettes; dim at night; high contrast in sunlight.
-- Parked-only settings, keyboard, and video.
+- `SurfaceCallback` hands us a raw `Surface`. `Surface.lockCanvas` is the direct,
+  low-risk drawing path.
+- A plain `View` on the phone calls the same `TileRenderer.draw`.
+- Compose would need an extra host/View bridge to reach the raw surface and adds
+  runtime/compiler surface area for no visual gain.
+- QML/Qt for Android would add a Qt Android deployment, a QML runtime, and a
+  Surface/TextureView bridge, plus a much larger APK and more lifecycle risk.
+  That is the opposite of speed-to-demo.
 
-### The five tiles
-
-1. **Drive** — map, next maneuver, ETA, speed. v0.1 uses a drawn mock map.
-   v0.2 uses phone GPS and a navigation handoff; later it can consume Android
-   Auto's navigation channel.
-2. **Media** — now playing, album art, transport, progress, source. v0.2 uses
-   MPRIS on the head unit or MediaSession metadata from the companion.
-3. **Comms** — notifications and messages, unread state, TTS readout, quick
-   replies. v0.2 uses Android's NotificationListenerService.
-4. **Vehicle** — speed, RPM, coolant, fuel/EV state of charge, range, DTCs.
-   v0.2 uses an ELM327 OBD-II adapter.
-5. **Home** — clock, weather, theme switcher, garage/Home Assistant scenes,
-   reverse camera placeholder, settings.
-
-### Safety
-
-- Driving state comes from OBD speed (preferred) or GPS.
-- Settings, keyboard, and non-essential scrolling are parked-only.
-- No video playback while moving. No "video in motion" defeat.
-- The screen must not block airbags or the driver's forward view.
-- A lithium battery on a hot dashboard is a fire risk. The final build should
-  use a car computer without a battery, or a properly protected UPS.
+ADR-0008 records the full trade-off.
 
 ## Architecture
 
-```
-Android phone (companion APK)
-  NotificationListener / MediaSession / Location / RemoteInput
-        │ WSS over phone hotspot, mDNS, pairing token
-        ▼
-omarchy-drived (Python or Rust, on tablet / car computer)
-  D-Bus: MPRIS, NetworkManager, UPower, BlueZ
-  OBD-II (ELM327), GPS, GPIO ignition, reverse camera
-        │ JSON-RPC / QML models
-        ▼
-Qt Quick / Quickshell shell (Omarchy theme, five tiles)
-        │
-        └── later: experimental AA receiver (android-auto / LIVI)
-```
-
-The head unit is the WebSocket server; the phone is the client. The phone hosts
-the hotspot, the daemon advertises `_omarchyauto._tcp` over mDNS, and the phone
-connects over pinned TLS. ADR-0007 records the proposal; the TLS and discovery
-pieces are not built yet.
-
-### Why a separate daemon
-
-The current ARMarchy Quickshell build disables networking, PipeWire, Bluetooth,
-and several optional services to stay light on ARMv7. Turning it into a system
-integration layer would be painful. Instead:
-
-- The QML shell is a view. It owns layout, theme, and touch.
-- `omarchy-drived` owns D-Bus, BlueZ, NetworkManager, UPower, OBD-II, GPS, and
-  the companion WebSocket. Python for speed of development; Rust if a static
-  binary or tighter memory budget is needed.
-- The boundary is a small JSON-RPC or property model (`MediaState`, `NavState`,
-  `VehicleState`, `Notification`, `PhoneState`). That boundary is what lets the
-  same shell later consume Android Auto data instead of the companion.
-
-### Data model (draft)
-
 ```text
-MediaState       title, artist, album, artUrl, playing, position, duration, source
-NavState         active, maneuver, road, distance, eta, remaining, speedLimit
-VehicleState     speed, rpm, coolant, fuel, evSoc, range, dtcs[], obdConnected
-Notification     id, app, title, text, time, unread, canReply, actions[]
-PhoneState       connected, battery, signal, name, hotspot
-ThemeState       name, palette, dayNight
+Android phone
+  Android Auto host  <── USB ──  car head unit
+    └─ OmarchyCarAppService (NAVIGATION)
+         NavigationTemplate + AppManager.setSurfaceCallback
+         CarSurfaceRenderer -> Surface.lockCanvas -> TileRenderer
+  Omarchy Launcher Activity
+         TileView -> TileRenderer
+
+  shared core/
+    Theme + ThemeStore
+    DashboardState + LiveDataStore
+    MediaWatcher (MediaSessionManager)
+    OmarchyNotificationListener
+    LocationWatcher (GPS speed)
+    SetupActivity
 ```
+
+The car app and launcher are separate APKs/processes. They share source, not
+runtime state. Notification access and media-session access are per app; the
+Setup screen explains and requests them.
+
+## Live data
+
+| Data | Source | Status |
+|---|---|---|
+| Clock | system time, 1 Hz redraw | working |
+| Theme | in-app ThemeStore/SharedPreferences | working |
+| Now playing | MediaSessionManager + MediaController | working in launcher; AA wired |
+| Artwork | MediaMetadata bitmap | working when provided |
+| Notifications | NotificationListenerService | working in launcher |
+| GPS speed | LocationManager GPS_PROVIDER | working; bench speed 0 |
+| Vehicle | mock | labeled mock |
+
+MediaSession discovery requires notification-listener access on modern Android.
+If access is missing, the Media tile says so. The Vehicle tile never pretends to
+be live.
+
+## Android Auto constraints
+
+- The app must be in the `androidx.car.app.category.NAVIGATION` category to use
+  `NavigationTemplate` and draw a surface.
+- Declare `androidx.car.app.NAVIGATION_TEMPLATES` and
+  `androidx.car.app.ACCESS_SURFACE`.
+- The host controls the template, status/action strip, and distraction rules.
+- The app's surface must respect the stable/visible area callbacks.
+- The debug build uses `HostValidator.ALLOW_ALL_HOSTS_VALIDATOR` because it is
+  not Play-distributed. This is not a production security posture.
+- Sideloading Car App Library apps is not guaranteed by current Android Auto
+  policy. The README documents the caveat and the Play Internal App Sharing
+  fallback. Real hardware verification is still required.
 
 ## Roadmap
 
-### Phase 0 — decisions and spikes (3–5 days)
+### Now / v0.1
 
-- S1: run the five-tile mock on the Tab 4; measure FPS, RAM, touch.
-- S2: connect the experimental Rust `android-auto` receiver on a desktop and
-  log what the navigation and media channels actually expose when
-  Maps/Spotify run.
-- S3: benchmark 480p/720p H.264 decode on the Tab 4.
-- S4: companion proof — notifications, media metadata, GPS to a laptop over
-  WebSocket for 30 minutes.
-- S5: OBD-II proof — ELM327 speed/RPM/coolant at 1 Hz.
-- S6: power/thermal proof — one hour in the car, ignition cycle.
+- Both APKs build and install.
+- Phone launcher demo with live media/notifications/GPS.
+- AA template/surface implementation compiled.
+- 1280×720 phone-launcher capture in `docs/img/`.
 
-### Phase 1 — shell skeleton (1–2 weeks)
+### v0.2 — car proof
 
-- Five tiles, fake data, theme switch, day/night.
-- Responsive 1280×800 and 800×1280.
-- Runs on desktop, then the Tab 4.
-- Exit: a demo video that already looks like the product.
+- Run on a real AA phone + car over USB.
+- Confirm the NavigationTemplate surface size/safe area and action strip.
+- Capture/photo the real AA screen; label it as such.
+- Verify theme action and Media tile with Spotify.
+- Fix any host-specific surface/touch behaviour.
 
-### Phase 2 — daemon and live data (1–2 weeks)
+### v0.3 — robustness
 
-- `omarchy-drived` with MPRIS, NetworkManager, UPower, OBD-II, GPS.
-- QML models and a fake/live switch.
-- Exit: media and vehicle tiles live on the bench.
+- Notification allow-list and OTP/2FA exclusion.
+- Media transport commands (play/pause/next) through MediaController.
+- Permission/onboarding polish; reconnect on process death.
+- Unit tests for renderer layout/hit testing; instrumentation for permissions.
 
-### Phase 3 — companion app (2 weeks)
+### Future — Linux/Quickshell
 
-- Foreground service, WSS client, mDNS discovery, pinned pairing, reconnect.
-- Notification listener, media session, location, quick reply.
-- Navigation handoff: send a destination to the phone, display the active
-  maneuver/ETA from its notification.
-- Exit: phone in a pocket, shell shows notifications/media/GPS for an hour.
+Keep `shell/` and `docs/archive/BRIEF-linux-2026-11-01.md`. Revisit only after
+the Android car demo is real. ADR-0001/0002 are superseded for v1 but remain
+useful history.
 
-### Phase 4 — bench integration (1 week)
+## Acceptance checklist for the redirect
 
-- Real phone, real car data, real audio.
-- Measure FPS, memory, thermals; fix the worst.
-- Exit: a one-hour bench run with no leaks or crashes.
-
-### Phase 5 — car install (1–2 weeks)
-
-- Fused 12V→5V supply, ignition sense, UPS/supercap, safe shutdown.
-- Mount, screen brightness, audio path, dimming.
-- Exit: a 30-minute drive with ignition on/off and resume.
-
-### Phase 6 — optional Android Auto (2–4 weeks)
-
-- Prefer AA as a data source: run the receiver, drop the video, consume the
-  navigation/media/audio channels, render the Omarchy UI.
-- Pixel projection is a separate mode for hardware that can decode H.264.
-- Exit: Google Maps routing visible as Omarchy maneuvers; no video decode.
-
-## Spikes
-
-| Spike | Question | Pass | Fallback |
-|---|---|---|---|
-| S1 Shell on Tab 4 | Five-tile mock at 30fps, under 300MB, touch works | Usable | Drop effects; move to Pi |
-| S2 AA data | Rust receiver connects; nav/media fields are usable | Enough for a tile | Companion nav handoff |
-| S3 H.264 on Tab 4 | 480p30/720p30 decode benchmark | 480p usable | No AA pixels on tablet |
-| S4 Companion | Notifications + media + GPS over WebSocket for 30 min | Stable | KDE Connect for media/notifications |
-| S5 OBD | ELM327 at 1 Hz on tablet | Works | Phone OBD app → companion |
-| S6 Power | One hour in car, ignition cycle | Stable | Redesign power |
+- [x] Git repo created, public, initial scaffold pushed.
+- [x] Two Android targets share one tile model/theme/renderer.
+- [x] `./gradlew assembleDebug` builds signed debug APKs.
+- [x] Phone launcher runs, theme switch works, live MediaSession and
+      notifications work, GPS fix obtained, tile launch/back works.
+- [ ] Real Android Auto car screen over USB.
+- [ ] Real AA theme switch + live Media tile on the car screen.
+- [x] 1280×720 capture in `docs/img/` (phone launcher, clearly labeled).
+- [x] Vehicle mock visibly labeled.
 
 ## Risks
 
-- **Android Auto receiver integration is unofficial.** It can break with a
-  phone or Play Services update. Do not ship it as a certified product; respect
-  distraction laws.
-- **Nav is the hard part.** Notification parsing is not turn-by-turn. Full
-  navigation needs AA pixels or a head-unit routing stack (Valhalla/OSRM plus
-  raster/vector maps). Do not hand-wave it.
-- **The Tab 4 is a 2014 ARMv7 tablet.** 1.3GB RAM, no DRM/GPU, low brightness,
-  old kernel, battery heat. It is a bench target, not the final car computer.
-- **Notification privacy.** The bridge carries message bodies. Pair, encrypt,
-  bind to the car network, never log notification content, and exclude OTP/2FA
-  and other sensitive categories by default. A token alone authenticates a
-  client but does not hide traffic.
-- **Hotspot and discovery.** Android hotspots vary by OEM, can sleep, and mDNS
-  can be blocked. Keep a manual host/port fallback and test screen-off,
-  reconnect, and roaming.
-- **Audio is a project on its own.** A2DP latency, HFP calls, echo cancellation.
-  Let the car stereo handle calls; use a USB DAC or AUX for media.
-- **Power and heat.** Fused automotive DC-DC, ignition sense, safe shutdown,
-  thermal cutoff. No Li-ion on the dash.
-- **Boot and resume.** Cold boot on the tablet is slow; suspend/resume is a
-  feature, not an afterthought.
-- **Scope.** Five tiles is already a lot. Ship three live plus two placeholders.
-
-## Success metrics
-
-- Shell starts to a usable state in under 5 seconds from suspend.
-- Five tiles reachable in one tap; no text entry while moving.
-- Phone bridge stays connected for a one-hour drive.
-- Media metadata and controls update within 500ms.
-- Notifications appear within 2 seconds.
-- OBD data updates at 1Hz without blocking the UI.
-- No crash, leak, or thermal shutdown in a 30-minute drive.
+- **Sideload policy.** Android Auto may hide a Car App Library app that was not
+  installed from Play. Validate before promising a car demo.
+- **Host variance.** Surface insets, action strip placement, click forwarding,
+  and DPI differ across cars. The renderer uses stable-area callbacks but is
+  untested on hardware.
+- **Android background limits.** The car service attempts foreground mode for
+  location; if the OS blocks it, speed may stop while the screen is off.
+- **Media permissions.** Notification-listener access is a broad grant; the app
+  must not log message bodies and should add an allow-list.
+- **Scope.** One DPI/layout target (1280×720 landscape) is the demo; portrait
+  phone layout is a secondary target.
 
 ## Open questions
 
-1. Is the car's existing stereo staying? (Recommended: yes, additive display.)
-2. Which phone, and does it allow a persistent WPA2 hotspot with mDNS clients?
-3. Is the proposed phone-hotspot + head-unit-server direction workable, or
-   should the car host the access point? (ADR-0007 is proposed, not accepted.)
-4. Is full turn-by-turn navigation required in v1, or is maneuver/ETA enough?
-5. Which car, and does it have OBD-II / an accessible 12V circuit?
-6. Personal project or public release? (Affects AA, licensing, distribution,
-   and whether TLS/pairing needs a real UX or a config file.)
+1. Can the target AA phone/version still show a sideloaded Car App Library app?
+2. Which real car/phone will be used for the acceptance capture?
+3. Which media app should the demo use (Spotify package, YouTube Music, local)?
+4. What notification allow-list is acceptable for the demo?
+5. Is the phone launcher intended as a default home replacement or a demo app?
+6. When, if ever, should the Linux/Quickshell path resume?

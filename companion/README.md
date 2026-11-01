@@ -1,5 +1,9 @@
 # Companion
 
+> **Future Linux path.** Android v1 does not use this bridge; the Car App
+> Library app and the phone launcher read notifications, media, and GPS
+> directly. This document is retained for the Quickshell/car-computer path.
+
 An Android app that turns the phone into the car shell's data source. It is not
 a launcher and it does not draw the car UI. It streams the things the phone
 knows — notifications, media metadata, location, navigation state — to

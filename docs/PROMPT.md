@@ -1,5 +1,9 @@
 # The prompt
 
+> **Historical note:** this was the Linux-first prompt review. On 2026-11-01
+> the project redirected to Android for v1 (ADR-0008). Keep this as context for
+> the future Linux/Quickshell path.
+
 ## What was originally asked
 
 The shared ChatGPT conversation contains three user messages (the assistant's

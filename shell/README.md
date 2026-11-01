@@ -1,5 +1,9 @@
 # Shell
 
+> **Linux/future path.** Android v1 lives in the repository root (`core/`,
+> `auto/`, `launcher/`). This QML shell is retained as the Quickshell/Linux
+> reference and is not part of either APK.
+
 A plain Qt 6 / Qt Quick prototype of the Omarchy Auto five-tile shell. It uses
 only Qt Quick primitives (`Item`, `Rectangle`, `Text`, `Canvas`, `Layouts`), so
 it runs with `qmlscene` on a desktop or on the ARMv7 tablet. The Quickshell

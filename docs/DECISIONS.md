@@ -5,7 +5,8 @@ changes; don't rewrite history.
 
 ## ADR-0001 — Omarchy is the host; the phone is the bridge
 
-**Status:** accepted (v1)
+**Status:** superseded for v1 by ADR-0008 (2026-11-01); retained as the
+Linux/Quickshell future path
 
 **Context:** "Omarchy on Android Auto" conflates a host UI with a projection
 protocol. Android Auto does not allow third-party launchers, whole-screen custom
@@ -21,7 +22,8 @@ later, not a dependency.
 
 ## ADR-0002 — Prototype as a portable Qt Quick app, not an Android APK
 
-**Status:** accepted
+**Status:** superseded for v1 by ADR-0008 (2026-11-01); the QML shell remains
+as the Linux/future prototype
 
 **Context:** OmarchyTV is an Android TV/Google TV/webOS launcher ecosystem with a
 PC/macOS bridge: a strong design reference, but its launcher is Android/web
@@ -52,9 +54,9 @@ grid. One tile expands fullscreen; back returns.
 **Consequences:** The UI reads as Omarchy without asking the driver to manage
 windows. It also works on a small screen and with software rendering.
 
-## ADR-0004 — Defer the car hardware decision
+## ADR-0004 — Defer the Linux car hardware decision
 
-**Status:** accepted
+**Status:** accepted for the Linux/future path; not needed for Android v1
 
 **Context:** The Tab 4 is already ported and free to use, but it is a 2014
 ARMv7 tablet with 1.3GB RAM, no DRM/GPU, low brightness, and a battery that
@@ -78,16 +80,16 @@ will not use the Tab 4 as the car screen.
 turn-on, climate controls, steering-wheel controls, reverse camera, and a custom
 bezel. That is a different project with a much larger risk surface.
 
-**Decision:** For v1, add a display and keep the car's existing stereo for
-calls, radio, and amplification. Use AUX or Bluetooth for media audio. Revisit a
-full replacement only after the shell is proven.
+**Decision:** Use the car's existing Android Auto screen for the v1 demo and
+keep the car's existing stereo for calls, radio, and amplification. Do not
+replace or rewire the factory head unit. The Linux path may add a display later.
 
 **Consequences:** The build is safer and cheaper. Calls and voice stay on the
 car's Bluetooth, which is also the right scope cut.
 
 ## ADR-0006 — Android Auto as a data source before pixels
 
-**Status:** proposed
+**Status:** deferred; not v1. V1 is a Car App Library app, not an AA receiver.
 
 **Context:** A full AA receiver needs H.264 decode, USB/Wi-Fi handshakes, and
 audio-focus work. The experimental Rust [`android-auto`](https://lib.rs/crates/android-auto)
@@ -108,7 +110,7 @@ quickly.
 
 ## ADR-0007 — Phone bridge: head-unit server, phone hotspot, authenticated transport
 
-**Status:** proposed
+**Status:** deferred; not v1. The Android v1 APKs do not use this bridge.
 
 **Context:** The brief says "WebSocket over phone hotspot", the companion says
 the head unit is the server, and the daemon says the transport is undecided.
@@ -137,15 +139,56 @@ unstable, use the car's AP or an existing Wi-Fi network with the same
 server/client contract. The bridge remains optional; the daemon and shell can
 run with fake data.
 
-## ADR-0008 — Status and mock data are labeled
+## ADR-0008 — Android Auto is the v1 target; Kotlin Canvas renderer
+
+**Status:** accepted (2026-11-01 redirect)
+
+**Context:** The fastest path to a real, filmable in-car demo is the car's
+existing Android Auto screen, not a new Linux head unit. Android Auto exposes a
+navigation app's map via `NavigationTemplate` + `AppManager.setSurfaceCallback`,
+but the host owns templates, action strips, and distraction rules. The app
+cannot replace the launcher.
+
+Rendering options:
+
+- **Kotlin + Android Canvas**: direct `Surface.lockCanvas`; the same renderer
+  can draw into a phone `View`. Smallest surface/lifecycle risk and fastest to a
+  demo.
+- **Kotlin + Compose Canvas**: pleasant phone UI, but the AA surface is raw
+  `Surface`; Compose would need a host View/ComposeView bridge and a Compose
+  runtime for no visual gain.
+- **QML/Qt for Android**: reuse the existing QML design, but adds a Qt Android
+  toolchain, QML runtime, Surface/TextureView bridge, APK size, and lifecycle
+  debugging. It is slower to a working AA demo and moves away from the Android
+  host.
+
+**Decision:** Build two Android targets around one Kotlin core:
+
+- `auto`: Car App Library `NAVIGATION` app, `NavigationTemplate`, surface
+  callback, five tiles, AA action-strip theme action.
+- `launcher`: full-screen phone Activity with the same renderer; tile taps open
+  real apps; Back returns.
+- `core`: theme/model/renderer, MediaSession, NotificationListener, GPS speed,
+  setup.
+- Four themes (Tokyo Night, Osaka Jade, Gruvbox, Catppuccin); 2px borders,
+  cut-out btop legends, monospace, Waybar-style top bar.
+
+**Consequences:** AA chrome/action strip stays host-controlled. Sideloaded
+Car App Library availability must be validated against current AA policy. The
+Linux/Quickshell path is paused but retained (`shell/`, archive). ADR-0001/0002
+are superseded for v1, not deleted.
+
+## ADR-0009 — Status and mock data are labeled
 
 **Status:** accepted
 
-**Context:** The prototype footer previously said "BRIDGE READY" and "OBD ·
-READY" while every value was fake. That is misleading in screenshots and demos.
+**Context:** The earlier prototype footer said "BRIDGE READY" and "OBD · READY"
+while every value was fake. That is misleading in screenshots and demos.
 
-**Decision:** The shell labels mock data in the footer and uses "mock" for
-unimplemented status. Live data replaces the label when the daemon is connected.
+**Decision:** The UI labels mock data (the Vehicle tile is `MOCK`; the footer
+says `MOCK VEHICLE`) and uses "WAIT"/"NEEDED" for missing live data. Live data
+must come from a real source. Test content used for verification is labeled as
+such in the docs.
 
-**Consequences:** Demos stay honest. A connected state must be earned by the
-daemon, not hard-coded.
+**Consequences:** Demos stay honest. A connected state must be earned by a real
+source, not hard-coded.
