@@ -38,25 +38,29 @@ You are taking over the existing Omarchy Auto Android project. Do not rewrite th
 
 ## Steps
 
-### 1. Build the latest debug APK
+### 1. Build the latest private AAB
 
 ```sh
 cd /mnt/adata/opt/omarchyauto
-./gradlew assembleDebug
+./gradlew :auto:bundleRelease -Pomarchy.includeLocalAssets=true
 ```
 
-Record the SHA-256 of `auto/build/outputs/apk/debug/auto-debug.apk`.
+Use `release/omarchy-auto-0.1.3-aa-release.aab` (versionCode 4) and record its
+SHA-256. The private flag is required for the local-only wallpaper; omit it for
+a clean/public build.
 
 ### 2. Create/use the Play Console app
 
 - Package name: `com.omarchy.auto`
 - Private app; no public listing needed.
 - Use Internal app sharing (Test and release → Internal app sharing), not a public/internal test track unless necessary.
-- Upload the debug APK. Internal App Sharing accepts debuggable builds and re-signs them with a test certificate.
+- Upload the signed AAB. Internal App Sharing re-signs it with a test certificate.
 
 ### 3. Install from the sharing link
 
-Uninstall the ADB-installed copy first, or the signature will conflict:
+A Play-installed 0.1.1 can update in place through the sharing link. If the phone
+has an ADB-signed copy instead, uninstall it first so the signature can be
+replaced:
 
 ```sh
 adb -s <serial> uninstall com.omarchy.auto
