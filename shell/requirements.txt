@@ -1,0 +1,2 @@
+# Optional host preview path. The shell itself only needs Qt Quick.
+PySide6-Essentials>=6.8

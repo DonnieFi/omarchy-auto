@@ -1,0 +1,45 @@
+# Qt / QML
+*.qmlc
+*.jsc
+.qmlproject.user
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Python
+__pycache__/
+*.py[cod]
+.venv
+venv/
+
+# Rust
+target/
+
+# Android
+.gradle/
+local.properties
+*.apk
+*.aab
+
+# Build output
+build/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local data and logs
+*.log
+
+# Android / Gradle
+.gradle/
+local.properties
+.kotlin/
+.cxx/
+.externalNativeBuild/
+captures/
+*.jks
+*.keystore
