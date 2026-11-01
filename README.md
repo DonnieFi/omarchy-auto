@@ -35,7 +35,12 @@ notifications (NotificationListener), GPS speed. The Vehicle tile is explicitly
 
 ## Build
 
-Prerequisites: JDK 17+ and Android SDK platform 35.
+Prerequisites: JDK 17+ and Android SDK platform 37.
+
+Toolchain: Gradle **9.8.2**, AGP **9.5.0**, built-in Kotlin (no separate KGP),
+compileSdk **37**, targetSdk **36**. CI uses the current action runtimes
+(`checkout@v7`, `setup-java@v6`, `setup-gradle@v6`, `upload-artifact@v7`) on
+`ubuntu-26.04`; there is no Node/JavaScript app in this repository.
 
 ```sh
 export ANDROID_HOME=/path/to/android-sdk
@@ -52,7 +57,7 @@ launcher/build/outputs/apk/debug/launcher-debug.apk
 They are debug-signed. Verify with:
 
 ```sh
-$ANDROID_HOME/build-tools/35.0.0/apksigner verify --print-certs \
+$ANDROID_HOME/build-tools/37.0.0/apksigner verify --print-certs \
   auto/build/outputs/apk/debug/auto-debug.apk
 ```
 

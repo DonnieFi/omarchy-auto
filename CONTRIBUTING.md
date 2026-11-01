@@ -9,9 +9,12 @@ point; screenshots and claims must match what actually ran.
 ## Build
 
 ```sh
-export ANDROID_HOME=/path/to/android-sdk   # platform 35
+export ANDROID_HOME=/path/to/android-sdk   # platform 37, build-tools 37.0.0
 ./gradlew assembleDebug
 ```
+
+Toolchain: Gradle 9.8.2, AGP 9.5.0, built-in Kotlin, compileSdk 37, targetSdk
+36, JDK 17+.
 
 APKs:
 
