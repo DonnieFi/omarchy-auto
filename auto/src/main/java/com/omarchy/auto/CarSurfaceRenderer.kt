@@ -110,12 +110,22 @@ class CarSurfaceRenderer(
                     draw()
                 }
 
+                TileRenderer.Target.PREV_TRACK -> {
+                    MediaTransport.previous()
+                    draw()
+                }
+
+                TileRenderer.Target.NEXT_TRACK -> {
+                    MediaTransport.next()
+                    draw()
+                }
+
                 TileRenderer.Target.NOTIF_REFRESH -> {
                     OmarchyNotificationListener.refresh(appContext)
                     draw()
                 }
 
-                TileRenderer.Target.NOTIF_DISMISS -> {
+                TileRenderer.Target.NOTIF_CLEAR -> {
                     OmarchyNotificationListener.dismissDisplayed(appContext)
                     draw()
                 }

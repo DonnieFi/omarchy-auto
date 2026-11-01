@@ -94,12 +94,22 @@ class TileView @JvmOverloads constructor(
                         invalidate()
                     }
 
+                    TileRenderer.Target.PREV_TRACK -> {
+                        MediaTransport.previous()
+                        invalidate()
+                    }
+
+                    TileRenderer.Target.NEXT_TRACK -> {
+                        MediaTransport.next()
+                        invalidate()
+                    }
+
                     TileRenderer.Target.NOTIF_REFRESH -> {
                         OmarchyNotificationListener.refresh(context)
                         invalidate()
                     }
 
-                    TileRenderer.Target.NOTIF_DISMISS -> {
+                    TileRenderer.Target.NOTIF_CLEAR -> {
                         OmarchyNotificationListener.dismissDisplayed(context)
                         invalidate()
                     }
