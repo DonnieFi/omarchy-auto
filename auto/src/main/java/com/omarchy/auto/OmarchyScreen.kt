@@ -33,11 +33,11 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
     private val surfaceCallback = object : SurfaceCallback {
         override fun onSurfaceAvailable(surfaceContainer: SurfaceContainer) {
             val surface = surfaceContainer.surface ?: return
+            surfaceRenderer?.stop()
             if (currentSurface !== surface) {
                 currentSurface?.release()
             }
             currentSurface = surface
-            surfaceRenderer?.stop()
             surfaceRenderer = CarSurfaceRenderer(
                 surface = surface,
                 width = surfaceContainer.width,

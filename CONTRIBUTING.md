@@ -1,5 +1,8 @@
 # Contributing
 
+This repository is private until launch. Do not publish the repository, builds,
+or screenshots without the owner's approval until then.
+
 This is a small prototype with a high bar for honesty. The car demo is the
 point; screenshots and claims must match what actually ran.
 

@@ -12,6 +12,7 @@ Android Auto footage; the car host has not been available yet.*
 
 ## Status — v0.1 redirect (2026-11-01)
 
+The repository is **private until launch**; contributors are added explicitly.
 The project pivoted from a Linux/Quickshell head unit to an Android target for
 the fastest path to a real in-car demo. The Linux path remains in `shell/` and
 in the docs archive as future work.

@@ -37,6 +37,13 @@ class CarSurfaceRenderer(
     fun stop() {
         handler.removeCallbacksAndMessages(null)
         thread.quitSafely()
+        try {
+            // Do not let the host destroy/reuse the Surface while a draw is
+            // still in flight.
+            thread.join(1000L)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
     }
 
     fun requestDraw() {

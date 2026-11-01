@@ -28,9 +28,15 @@ class OmarchyCarAppService : CarAppService() {
     }
 
     override fun createHostValidator(): HostValidator {
-        // Sideloaded prototype: Android Auto is not a Play-certified host here.
-        // Do not ship a production build with this validator.
-        return HostValidator.ALLOW_ALL_HOSTS_VALIDATOR
+        // Sideloaded debug builds need to accept the AA host. A release build
+        // deliberately has no allow-all validator; configure the real host
+        // allow-list before shipping one.
+        val debuggable = applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
+        return if (debuggable) {
+            HostValidator.ALLOW_ALL_HOSTS_VALIDATOR
+        } else {
+            HostValidator.Builder(this).build()
+        }
     }
 
     override fun onCreateSession(sessionInfo: SessionInfo): Session = OmarchySession()

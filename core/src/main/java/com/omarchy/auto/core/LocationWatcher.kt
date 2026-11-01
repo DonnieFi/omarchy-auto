@@ -65,7 +65,14 @@ class LocationWatcher(
     override fun onLocationChanged(location: Location) = publish(location)
 
     override fun onProviderDisabled(provider: String) {
-        if (provider == LocationManager.GPS_PROVIDER) onUpdate(null, false)
+        if (provider != LocationManager.GPS_PROVIDER) return
+        started = false
+        try {
+            manager?.removeUpdates(this)
+        } catch (_: Exception) {
+            // Provider teardown races are harmless.
+        }
+        onUpdate(null, false)
     }
 
     override fun onProviderEnabled(provider: String) {
