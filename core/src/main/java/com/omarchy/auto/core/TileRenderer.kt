@@ -123,6 +123,7 @@ class TileRenderer {
             )
         }?.takeIf { it.width() > 100f && it.height() > 100f } ?: RectF(0f, 0f, width.toFloat(), height.toFloat())
 
+        val car = mode == Mode.CAR
         val landscape = area.width() > area.height() * 1.25f
         val unit = if (landscape) {
             minOf(area.width() / 1280f, area.height() / 720f)
@@ -130,28 +131,33 @@ class TileRenderer {
             area.width() / 720f
         }.coerceAtLeast(0.7f)
 
-        val margin = 14f * unit
-        val gap = 10f * unit
-        val topBarH = 56f * unit
-        val footerH = 24f * unit
+        val margin = (if (car) 18f else 14f) * unit
+        val gap = (if (car) 12f else 10f) * unit
+        val topBarH = (if (car) 64f else 56f) * unit
+        val footerH = (if (car) 30f else 24f) * unit
         val tileTop = area.top + topBarH + gap
         val tileBottom = area.bottom - footerH - gap
         val contentHeight = tileBottom - tileTop
+        val barScale = if (car) 1.7f else 1f
 
         canvas.drawColor(theme.background)
         drawWallpaper(canvas, width, height, area, theme, unit)
 
         val themeButton = RectF(
-            area.right - margin - 62f * unit,
-            area.top + (topBarH - 34f * unit) / 2f,
+            area.right - margin - 62f * unit * barScale,
+            area.top + (topBarH - 34f * unit * barScale) / 2f,
             area.right - margin,
-            area.top + (topBarH + 34f * unit) / 2f,
+            area.top + (topBarH + 34f * unit * barScale) / 2f,
         )
         val chips = mutableListOf<Pair<Int, RectF>>()
 
-        // A narrow rail of small tiles on the right, top-down.
-        val railWidth = minOf(104f * unit, area.width() * 0.23f)
-            .coerceAtLeast(74f * unit)
+        // A narrow rail of small tiles on the right, top-down. In the car the
+        // rail and its type are deliberately larger: the AA surface is often
+        // 1920x720 and the driver is much farther from the panel than a phone.
+        val railWidth = minOf(
+            (if (car) 200f else 104f) * unit,
+            area.width() * (if (car) 0.26f else 0.23f),
+        ).coerceAtLeast((if (car) 150f else 74f) * unit)
         val railX = area.right - margin - railWidth
         val stage = RectF(
             area.left + margin,
@@ -166,7 +172,10 @@ class TileRenderer {
             TileId.VEHICLE,
             TileId.HOME,
         )
-        val tileHeight = minOf(84f * unit, (contentHeight - gap * 4f) / 5f)
+        val tileHeight = minOf(
+            (if (car) 112f else 84f) * unit,
+            (contentHeight - gap * 4f) / 5f,
+        )
         val railRects = railIds.mapIndexed { index, id ->
             id to RectF(
                 railX,
@@ -175,16 +184,17 @@ class TileRenderer {
                 tileTop + (tileHeight + gap) * index + tileHeight,
             )
         }
+        val railUnit = unit * (if (car) 1.9f else 1f)
 
         drawTopBar(canvas, area, theme, unit, state, mode, themeButton, themeIndex)
         val stageHit = if (selected != null) {
             drawStage(canvas, stage, theme, state, unit, mode, themeIndex, chips)
         } else {
-            drawIdleStage(canvas, area, tileBottom, theme, unit)
+            drawIdleStage(canvas, area, tileBottom, theme, unit, mode)
             StageHit(open = null, play = null, setup = null)
         }
         railRects.forEach { (id, rect) ->
-            drawRailTile(canvas, rect, id, theme, state, unit)
+            drawRailTile(canvas, rect, id, theme, state, railUnit)
         }
         drawFooter(canvas, area, theme, unit, state, mode, themeIndex)
 
@@ -400,16 +410,18 @@ class TileRenderer {
         tileBottom: Float,
         theme: OmarchyTheme,
         unit: Float,
+        mode: Mode,
     ) {
+        val textUnit = unit * if (mode == Mode.CAR) 2f else 1f
         val message = "ALL TILES MINIMIZED  ·  SELECT ONE FROM THE RIGHT RAIL"
         text(
             canvas,
             message,
-            area.left + 18f * unit,
-            tileBottom - 12f * unit,
-            10f * unit,
+            area.left + 18f * textUnit,
+            tileBottom - 12f * textUnit,
+            10f * textUnit,
             theme.dim,
-            maxWidth = area.width() - 36f * unit,
+            maxWidth = area.width() - 36f * textUnit,
         )
     }
 
@@ -441,26 +453,27 @@ class TileRenderer {
             2f * unit, 2f * unit, stroke,
         )
 
+        val stageUnit = unit * if (mode == Mode.CAR) 1.9f else 1.15f
+        val stageChrome = if (mode == Mode.CAR) stageUnit else unit
         val legend = "[${id.number} · ${id.title}]"
-        val legendSize = 11f * unit
-        val legendWidth = measure(legend, legendSize, bold = true) + 18f * unit
+        val legendSize = 11f * stageChrome
+        val legendWidth = measure(legend, legendSize, bold = true) + 18f * stageChrome
         fill.color = withAlpha(theme.background, 235)
         canvas.drawRect(
-            stage.left + 14f * unit, stage.top - 1f * unit,
-            stage.left + 14f * unit + legendWidth, stage.top + 20f * unit,
+            stage.left + 14f * stageChrome, stage.top - 1f * unit,
+            stage.left + 14f * stageChrome + legendWidth, stage.top + 20f * stageChrome,
             fill,
         )
         text(
-            canvas, legend, stage.left + 22f * unit, stage.top + 14f * unit,
+            canvas, legend, stage.left + 22f * stageChrome, stage.top + 14f * stageChrome,
             legendSize, theme.accent, bold = true,
         )
 
-        val stageUnit = unit * 1.15f
         val content = RectF(
-            stage.left + 16f * unit,
-            stage.top + 34f * unit,
-            stage.right - 16f * unit,
-            stage.bottom - 14f * unit,
+            stage.left + 16f * stageChrome,
+            stage.top + 34f * stageChrome,
+            stage.right - 16f * stageChrome,
+            stage.bottom - 14f * stageChrome,
         )
         var play: RectF? = null
         var setup: RectF? = null
@@ -487,19 +500,19 @@ class TileRenderer {
                 TileId.VEHICLE -> ""
             }
             val rect = RectF(
-                stage.right - 16f * unit - 142f * unit,
-                stage.top + 8f * unit,
-                stage.right - 16f * unit,
-                stage.top + 36f * unit,
+                stage.right - 16f * stageChrome - 142f * stageChrome,
+                stage.top + 8f * stageChrome,
+                stage.right - 16f * stageChrome,
+                stage.top + 36f * stageChrome,
             )
             fill.color = withAlpha(theme.surfaceAlt, 235)
-            canvas.drawRoundRect(rect, 2f * unit, 2f * unit, fill)
-            stroke.strokeWidth = 1f * unit
+            canvas.drawRoundRect(rect, 2f * stageChrome, 2f * stageChrome, fill)
+            stroke.strokeWidth = 1f * stageChrome
             stroke.color = theme.border
-            canvas.drawRoundRect(rect, 2f * unit, 2f * unit, stroke)
+            canvas.drawRoundRect(rect, 2f * stageChrome, 2f * stageChrome, stroke)
             text(
-                canvas, label, rect.centerX() - measure(label, 8f * unit) / 2f,
-                rect.centerY() + 3f * unit, 8f * unit, theme.accent,
+                canvas, label, rect.centerX() - measure(label, 8f * stageChrome) / 2f,
+                rect.centerY() + 3f * stageChrome, 8f * stageChrome, theme.accent,
             )
             rect
         } else {
@@ -509,22 +522,22 @@ class TileRenderer {
         var refresh: RectF? = null
         var dismiss: RectF? = null
         if (id == TileId.COMMS) {
-            val button = 30f * unit
-            val edge = open?.left ?: (stage.right - 16f * unit)
+            val button = 30f * stageChrome
+            val edge = open?.left ?: (stage.right - 16f * stageChrome)
             dismiss = RectF(
-                edge - 8f * unit - button,
-                stage.top + 8f * unit,
-                edge - 8f * unit,
-                stage.top + 8f * unit + button,
+                edge - 8f * stageChrome - button,
+                stage.top + 8f * stageChrome,
+                edge - 8f * stageChrome,
+                stage.top + 8f * stageChrome + button,
             )
             refresh = RectF(
-                dismiss.left - 8f * unit - button,
-                stage.top + 8f * unit,
-                dismiss.left - 8f * unit,
-                stage.top + 8f * unit + button,
+                dismiss.left - 8f * stageChrome - button,
+                stage.top + 8f * stageChrome,
+                dismiss.left - 8f * stageChrome,
+                stage.top + 8f * stageChrome + button,
             )
-            drawIconButton(canvas, refresh, theme, unit, refresh = true)
-            drawIconButton(canvas, dismiss, theme, unit, refresh = false)
+            drawIconButton(canvas, refresh, theme, stageChrome, refresh = true)
+            drawIconButton(canvas, dismiss, theme, stageChrome, refresh = false)
         }
 
         return StageHit(
@@ -593,35 +606,38 @@ class TileRenderer {
         themeButton: RectF,
         themeIndex: Int,
     ) {
-        val topBarH = 56f * unit
+        val car = mode == Mode.CAR
+        val barScale = if (car) 1.7f else 1f
+        val barUnit = unit * barScale
+        val topBarH = (if (car) 64f else 56f) * unit
         fill.style = Paint.Style.FILL
         fill.color = withAlpha(theme.surface, 228)
         canvas.drawRect(area.left, area.top, area.right, area.top + topBarH, fill)
         fill.color = theme.border
         canvas.drawRect(area.left, area.top + topBarH - 1f, area.right, area.top + topBarH, fill)
 
-        val baseline = area.top + topBarH / 2f + 5.5f * unit
-        text(canvas, "OMARCHY", area.left + 18f * unit, baseline, 16f * unit, theme.accent, bold = true)
-        val brandWidth = measure("OMARCHY", 16f * unit, bold = true)
+        val baseline = area.top + topBarH / 2f + 5.5f * barUnit
+        text(canvas, "OMARCHY", area.left + 18f * barUnit, baseline, 16f * barUnit, theme.accent, bold = true)
+        val brandWidth = measure("OMARCHY", 16f * barUnit, bold = true)
         text(
-            canvas, "// AUTO", area.left + 18f * unit + brandWidth + 10f * unit, baseline,
-            11f * unit, theme.dim,
+            canvas, "// AUTO", area.left + 18f * barUnit + brandWidth + 10f * barUnit, baseline,
+            11f * barUnit, theme.dim,
         )
         val modeText = if (mode == Mode.CAR) "AA" else "PHONE"
         text(
-            canvas, modeText, area.left + 18f * unit + brandWidth + 75f * unit,
-            baseline, 10f * unit, theme.dim,
+            canvas, modeText, area.left + 18f * barUnit + brandWidth + 75f * barUnit,
+            baseline, 10f * barUnit, theme.dim,
         )
 
         val themeName = Themes.at(themeIndex).name
         text(
-            canvas, themeName, themeButton.left - 12f * unit - measure(themeName, 10f * unit),
-            baseline, 10f * unit, theme.dim,
+            canvas, themeName, themeButton.left - 12f * barUnit - measure(themeName, 10f * barUnit),
+            baseline, 10f * barUnit, theme.dim,
         )
         val clock = clockFormat.format(Date())
         text(
-            canvas, clock, themeButton.left - 12f * unit - measure(themeName, 10f * unit) - 20f * unit - measure(clock, 18f * unit, bold = true),
-            baseline + 1f * unit, 18f * unit, theme.foreground, bold = true,
+            canvas, clock, themeButton.left - 12f * barUnit - measure(themeName, 10f * barUnit) - 20f * barUnit - measure(clock, 18f * barUnit, bold = true),
+            baseline + 1f * barUnit, 18f * barUnit, theme.foreground, bold = true,
         )
 
         fill.style = Paint.Style.FILL
@@ -632,8 +648,8 @@ class TileRenderer {
         stroke.color = theme.border
         canvas.drawRoundRect(themeButton, 2f * unit, 2f * unit, stroke)
         text(
-            canvas, "THEME", themeButton.centerX() - measure("THEME", 9f * unit) / 2f,
-            themeButton.centerY() + 3f * unit, 9f * unit, theme.accent,
+            canvas, "THEME", themeButton.centerX() - measure("THEME", 9f * barUnit) / 2f,
+            themeButton.centerY() + 3f * barUnit, 9f * barUnit, theme.accent,
         )
     }
 
@@ -646,7 +662,8 @@ class TileRenderer {
         mode: Mode,
         themeIndex: Int,
     ) {
-        val footerH = 24f * unit
+        val footerH = (if (mode == Mode.CAR) 30f else 24f) * unit
+        val textUnit = unit * if (mode == Mode.CAR) 1.8f else 1f
         val top = area.bottom - footerH
         fill.style = Paint.Style.FILL
         fill.color = withAlpha(theme.surface, 236)
@@ -654,22 +671,22 @@ class TileRenderer {
         fill.color = theme.border
         canvas.drawRect(area.left, top, area.right, top + 1f, fill)
 
-        val baseline = top + footerH / 2f + 3.5f * unit
-        var x = area.left + 16f * unit
-        x = status(canvas, x, baseline, "MEDIA", state.mediaAccess, theme, unit)
-        x = status(canvas, x + 16f * unit, baseline, "NOTIF", state.notificationAccess, theme, unit)
-        status(canvas, x + 16f * unit, baseline, "GPS", state.locationAccess, theme, unit)
+        val baseline = top + footerH / 2f + 3.5f * textUnit
+        var x = area.left + 16f * textUnit
+        x = status(canvas, x, baseline, "MEDIA", state.mediaAccess, theme, textUnit)
+        x = status(canvas, x + 16f * textUnit, baseline, "NOTIF", state.notificationAccess, theme, textUnit)
+        status(canvas, x + 16f * textUnit, baseline, "GPS", state.locationAccess, theme, textUnit)
 
         val mock = if (state.vehicleMock) "MOCK VEHICLE" else "OBD LIVE"
         text(
-            canvas, mock, area.centerX() - measure(mock, 9f * unit) / 2f, baseline,
-            9f * unit, if (state.vehicleMock) theme.yellow else theme.green,
+            canvas, mock, area.centerX() - measure(mock, 9f * textUnit) / 2f, baseline,
+            9f * textUnit, if (state.vehicleMock) theme.yellow else theme.green,
         )
         val modeLabel = if (mode == Mode.CAR) "AA HOST" else "PHONE"
         val right = "$modeLabel  ·  ${Themes.at(themeIndex).name}"
         text(
-            canvas, right, area.right - 16f * unit - measure(right, 9f * unit),
-            baseline, 9f * unit, theme.accent,
+            canvas, right, area.right - 16f * textUnit - measure(right, 9f * textUnit),
+            baseline, 9f * textUnit, theme.accent,
         )
     }
 
@@ -1004,7 +1021,7 @@ class TileRenderer {
             return
         }
 
-        val maxItems = if (content.height() / unit > 360f) 4 else 3
+        val maxItems = if (content.height() > 4f * 54f * unit) 4 else 3
         val items = state.notifications.take(maxItems)
         val rowH = minOf(54f * unit, content.height() / items.size)
         items.forEachIndexed { index, item ->

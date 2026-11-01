@@ -1,5 +1,16 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
+}
+
+// Release signing: path comes from the Gradle property `omarchy.keystoreProperties`
+// (e.g. in ~/.gradle/gradle.properties) or the env var OMARCHY_KEYSTORE_PROPERTIES.
+// The file and keystore live outside the repo. If absent, release stays unsigned.
+val keystorePropsFile = (findProperty("omarchy.keystoreProperties") as String?
+    ?: System.getenv("OMARCHY_KEYSTORE_PROPERTIES"))?.let { file(it) }
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile?.isFile == true) keystorePropsFile.inputStream().use { load(it) }
 }
 
 android {
@@ -10,11 +21,24 @@ android {
         applicationId = "com.omarchy.auto"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.1.2"
+    }
+
+    if (keystoreProps.getProperty("storeFile") != null) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+        buildTypes.getByName("release").signingConfig = signingConfigs.getByName("release")
     }
 
     sourceSets["debug"].assets.srcDir(rootProject.file("local-assets"))
+    sourceSets["release"].assets.srcDir(rootProject.file("local-assets"))
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
