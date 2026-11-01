@@ -28,8 +28,6 @@ class MainActivity : Activity() {
         controller = LiveDataController(this)
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        window.statusBarColor = ThemeStore.current().background
-        window.navigationBarColor = ThemeStore.current().background
 
         val view = TileView(this).apply {
             onSetup = {
@@ -43,7 +41,6 @@ class MainActivity : Activity() {
         setContentView(view)
 
         if (Build.VERSION.SDK_INT >= 30) {
-            window.setDecorFitsSystemWindows(false)
             window.decorView.windowInsetsController?.apply {
                 hide(WindowInsets.Type.systemBars())
                 systemBarsBehavior =

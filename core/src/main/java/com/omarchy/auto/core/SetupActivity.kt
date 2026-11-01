@@ -30,8 +30,6 @@ class SetupActivity : Activity() {
         ThemeStore.init(this)
         isLauncher = intent.getBooleanExtra(EXTRA_LAUNCHER, false)
         theme = ThemeStore.current()
-        window.statusBarColor = theme.background
-        window.navigationBarColor = theme.background
         window.setBackgroundDrawable(ColorDrawable(theme.background))
 
         val column = LinearLayout(this).apply {
