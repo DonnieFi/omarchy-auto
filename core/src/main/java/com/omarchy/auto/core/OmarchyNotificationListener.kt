@@ -13,9 +13,23 @@ import android.service.notification.StatusBarNotification
  */
 class OmarchyNotificationListener : NotificationListenerService() {
 
+    override fun onCreate() {
+        super.onCreate()
+        instance = this
+    }
+
+    override fun onDestroy() {
+        if (instance === this) instance = null
+        super.onDestroy()
+    }
+
     override fun onListenerConnected() {
         super.onListenerConnected()
         LiveDataStore.setNotificationAccess(true)
+        loadActive()
+    }
+
+    private fun loadActive() {
         val existing = try {
             activeNotifications.orEmpty()
         } catch (_: Exception) {
@@ -97,7 +111,35 @@ class OmarchyNotificationListener : NotificationListenerService() {
     }
 
     companion object {
+        @Volatile
+        private var instance: OmarchyNotificationListener? = null
+
         fun component(context: Context): ComponentName =
             ComponentName(context, OmarchyNotificationListener::class.java)
+
+        fun refresh(context: Context) {
+            val service = instance
+            if (service != null) {
+                service.loadActive()
+            } else {
+                try {
+                    requestRebind(component(context))
+                } catch (_: Exception) {
+                    // The listener is not available yet; the next post still works.
+                }
+            }
+        }
+
+        fun dismissDisplayed(context: Context) {
+            val service = instance ?: return
+            for (item in LiveDataStore.state.notifications) {
+                try {
+                    service.cancelNotification(item.key)
+                } catch (_: Exception) {
+                    // A notification may have been removed already.
+                }
+                LiveDataStore.removeNotification(item.key)
+            }
+        }
     }
 }

@@ -32,6 +32,8 @@ class TileRenderer {
         THEME_CHIP,
         STAGE_OPEN,
         PLAY_PAUSE,
+        NOTIF_REFRESH,
+        NOTIF_DISMISS,
         TILE_DRIVE,
         TILE_MEDIA,
         TILE_COMMS,
@@ -47,6 +49,8 @@ class TileRenderer {
         val chips: List<Pair<Int, RectF>>,
         val stageOpen: RectF?,
         val playPause: RectF?,
+        val notifRefresh: RectF?,
+        val notifDismiss: RectF?,
         val tiles: Map<Target, RectF>,
     )
 
@@ -54,6 +58,8 @@ class TileRenderer {
         val open: RectF?,
         val play: RectF?,
         val setup: RectF?,
+        val refresh: RectF? = null,
+        val dismiss: RectF? = null,
     )
 
     @Volatile
@@ -188,6 +194,8 @@ class TileRenderer {
             chips = chips.map { it.first to RectF(it.second) },
             stageOpen = stageHit.open?.let { RectF(it) },
             playPause = stageHit.play?.let { RectF(it) },
+            notifRefresh = stageHit.refresh?.let { RectF(it) },
+            notifDismiss = stageHit.dismiss?.let { RectF(it) },
             tiles = railRects.associate { (id, rect) ->
                 when (id) {
                     TileId.DRIVE -> Target.TILE_DRIVE
@@ -209,6 +217,8 @@ class TileRenderer {
         }
         layout.stageOpen?.takeIf { it.contains(x, y) }?.let { return Hit(Target.STAGE_OPEN) }
         layout.playPause?.takeIf { it.contains(x, y) }?.let { return Hit(Target.PLAY_PAUSE) }
+        layout.notifRefresh?.takeIf { it.contains(x, y) }?.let { return Hit(Target.NOTIF_REFRESH) }
+        layout.notifDismiss?.takeIf { it.contains(x, y) }?.let { return Hit(Target.NOTIF_DISMISS) }
         layout.tiles.entries.firstOrNull { it.value.contains(x, y) }?.let {
             return Hit(it.key)
         }
@@ -457,17 +467,7 @@ class TileRenderer {
 
         when (id) {
             TileId.DRIVE -> drawDrive(canvas, content, theme, state, stageUnit)
-            TileId.MEDIA -> {
-                drawMedia(canvas, content, theme, state, stageUnit)
-                if (state.media != null) {
-                    play = RectF(
-                        content.centerX() - 21f * stageUnit,
-                        content.bottom - 8f * stageUnit - 14f * stageUnit,
-                        content.centerX() + 21f * stageUnit,
-                        content.bottom - 8f * stageUnit + 14f * stageUnit,
-                    )
-                }
-            }
+            TileId.MEDIA -> play = drawMedia(canvas, content, theme, state, stageUnit)
 
             TileId.COMMS -> drawComms(canvas, content, theme, state, stageUnit)
             TileId.VEHICLE -> drawVehicle(canvas, content, theme, state, stageUnit)
@@ -506,7 +506,78 @@ class TileRenderer {
             null
         }
 
-        return StageHit(open = open, play = play, setup = setup)
+        var refresh: RectF? = null
+        var dismiss: RectF? = null
+        if (id == TileId.COMMS) {
+            val button = 30f * unit
+            val edge = open?.left ?: (stage.right - 16f * unit)
+            dismiss = RectF(
+                edge - 8f * unit - button,
+                stage.top + 8f * unit,
+                edge - 8f * unit,
+                stage.top + 8f * unit + button,
+            )
+            refresh = RectF(
+                dismiss.left - 8f * unit - button,
+                stage.top + 8f * unit,
+                dismiss.left - 8f * unit,
+                stage.top + 8f * unit + button,
+            )
+            drawIconButton(canvas, refresh, theme, unit, refresh = true)
+            drawIconButton(canvas, dismiss, theme, unit, refresh = false)
+        }
+
+        return StageHit(
+            open = open,
+            play = play,
+            setup = setup,
+            refresh = refresh,
+            dismiss = dismiss,
+        )
+    }
+
+    private fun drawIconButton(
+        canvas: Canvas,
+        rect: RectF,
+        theme: OmarchyTheme,
+        unit: Float,
+        refresh: Boolean,
+    ) {
+        fill.style = Paint.Style.FILL
+        fill.color = withAlpha(theme.surfaceAlt, 235)
+        canvas.drawRoundRect(rect, 2f * unit, 2f * unit, fill)
+        stroke.style = Paint.Style.STROKE
+        stroke.strokeWidth = 1f * unit
+        stroke.color = theme.border
+        canvas.drawRoundRect(rect, 2f * unit, 2f * unit, stroke)
+
+        val cx = rect.centerX()
+        val cy = rect.centerY()
+        val r = 8f * unit
+        if (refresh) {
+            stroke.strokeWidth = 2f * unit
+            stroke.color = theme.accent
+            canvas.drawArc(
+                RectF(cx - r, cy - r, cx + r, cy + r),
+                -50f,
+                285f,
+                false,
+                stroke,
+            )
+            val arrow = Path().apply {
+                moveTo(cx + r * 0.82f, cy - r * 0.85f)
+                lineTo(cx + r * 1.16f, cy - r * 0.15f)
+                lineTo(cx + r * 0.30f, cy - r * 0.20f)
+                close()
+            }
+            fill.color = theme.accent
+            canvas.drawPath(arrow, fill)
+        } else {
+            stroke.strokeWidth = 2f * unit
+            stroke.color = theme.red
+            canvas.drawLine(cx - r * 0.7f, cy - r * 0.7f, cx + r * 0.7f, cy + r * 0.7f, stroke)
+            canvas.drawLine(cx + r * 0.7f, cy - r * 0.7f, cx - r * 0.7f, cy + r * 0.7f, stroke)
+        }
     }
 
     private fun withAlpha(color: Int, alpha: Int): Int =
@@ -783,7 +854,7 @@ class TileRenderer {
         theme: OmarchyTheme,
         state: DashboardState,
         unit: Float,
-    ) {
+    ): RectF? {
         val media = state.media
         if (media == null) {
             val title = if (state.mediaAccess) "NO ACTIVE MEDIA" else "MEDIA ACCESS NEEDED"
@@ -801,7 +872,7 @@ class TileRenderer {
                 canvas, detail, content.centerX() - measure(detail, 10f * unit) / 2f,
                 content.centerY() + 18f * unit, 10f * unit, theme.dim,
             )
-            return
+            return null
         }
 
         val artSize = minOf(content.width() * 0.32f, content.height() * 0.62f)
@@ -845,7 +916,7 @@ class TileRenderer {
             8f * unit, theme.dim, maxWidth = textWidth,
         )
 
-        val progressTop = content.bottom - 34f * unit
+        val progressTop = content.bottom - 108f * unit
         val progressWidth = content.width()
         fill.color = theme.border
         canvas.drawRect(content.left, progressTop, content.left + progressWidth, progressTop + 4f * unit, fill)
@@ -867,32 +938,39 @@ class TileRenderer {
             progressTop + 18f * unit, 8f * unit, theme.dim,
         )
 
-        drawTransport(canvas, content.left + progressWidth / 2f, content.bottom - 8f * unit, media.playing, theme, unit)
+        val transport = RectF(
+            content.centerX() - 44f * unit,
+            content.bottom - 8f * unit - 64f * unit,
+            content.centerX() + 44f * unit,
+            content.bottom - 8f * unit,
+        )
+        drawTransport(canvas, transport, media.playing, theme, unit)
+        return transport
     }
 
     private fun drawTransport(
         canvas: Canvas,
-        centerX: Float,
-        centerY: Float,
+        rect: RectF,
         playing: Boolean,
         theme: OmarchyTheme,
         unit: Float,
     ) {
         fill.style = Paint.Style.FILL
         fill.color = theme.accent
-        canvas.drawRoundRect(
-            RectF(centerX - 21f * unit, centerY - 14f * unit, centerX + 21f * unit, centerY + 14f * unit),
-            2f * unit, 2f * unit, fill,
-        )
+        canvas.drawRoundRect(rect, 2f * unit, 2f * unit, fill)
+        val cx = rect.centerX()
+        val cy = rect.centerY()
         if (playing) {
             fill.color = theme.background
-            canvas.drawRect(centerX - 5f * unit, centerY - 6f * unit, centerX - 2f * unit, centerY + 6f * unit, fill)
-            canvas.drawRect(centerX + 2f * unit, centerY - 6f * unit, centerX + 5f * unit, centerY + 6f * unit, fill)
+            val barW = 9f * unit
+            val barH = 30f * unit
+            canvas.drawRect(cx - 15f * unit, cy - barH / 2, cx - 15f * unit + barW, cy + barH / 2, fill)
+            canvas.drawRect(cx + 6f * unit, cy - barH / 2, cx + 6f * unit + barW, cy + barH / 2, fill)
         } else {
             val path = Path()
-            path.moveTo(centerX - 3f * unit, centerY - 7f * unit)
-            path.lineTo(centerX + 7f * unit, centerY)
-            path.lineTo(centerX - 3f * unit, centerY + 7f * unit)
+            path.moveTo(cx - 11f * unit, cy - 16f * unit)
+            path.lineTo(cx + 17f * unit, cy)
+            path.lineTo(cx - 11f * unit, cy + 16f * unit)
             path.close()
             fill.color = theme.background
             canvas.drawPath(path, fill)

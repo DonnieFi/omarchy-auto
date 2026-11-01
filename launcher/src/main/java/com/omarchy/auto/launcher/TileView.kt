@@ -11,6 +11,7 @@ import com.omarchy.auto.core.AppBackground
 import com.omarchy.auto.core.DashboardState
 import com.omarchy.auto.core.LiveDataStore
 import com.omarchy.auto.core.MediaTransport
+import com.omarchy.auto.core.OmarchyNotificationListener
 import com.omarchy.auto.core.ThemeStore
 import com.omarchy.auto.core.TileId
 import com.omarchy.auto.core.TileRenderer
@@ -90,6 +91,16 @@ class TileView @JvmOverloads constructor(
                     TileRenderer.Target.STAGE_OPEN -> renderer.selected?.let { onTileTap?.invoke(it) }
                     TileRenderer.Target.PLAY_PAUSE -> {
                         MediaTransport.toggle()
+                        invalidate()
+                    }
+
+                    TileRenderer.Target.NOTIF_REFRESH -> {
+                        OmarchyNotificationListener.refresh(context)
+                        invalidate()
+                    }
+
+                    TileRenderer.Target.NOTIF_DISMISS -> {
+                        OmarchyNotificationListener.dismissDisplayed(context)
                         invalidate()
                     }
 

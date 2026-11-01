@@ -35,7 +35,9 @@ class OmarchyCarAppService : CarAppService() {
         return if (debuggable) {
             HostValidator.ALLOW_ALL_HOSTS_VALIDATOR
         } else {
-            HostValidator.Builder(this).build()
+            HostValidator.Builder(this)
+                .addAllowedHosts(androidx.car.app.R.array.hosts_allowlist_sample)
+                .build()
         }
     }
 

@@ -10,6 +10,7 @@ import android.view.Surface
 import com.omarchy.auto.core.AppBackground
 import com.omarchy.auto.core.LiveDataStore
 import com.omarchy.auto.core.MediaTransport
+import com.omarchy.auto.core.OmarchyNotificationListener
 import com.omarchy.auto.core.ThemeStore
 import com.omarchy.auto.core.TileId
 import com.omarchy.auto.core.TileRenderer
@@ -30,6 +31,7 @@ class CarSurfaceRenderer(
     private val surface: Surface,
     context: Context,
 ) {
+    private val appContext = context.applicationContext
     private val thread = HandlerThread("omarchy-car-surface").apply { start() }
     private val handler = Handler(thread.looper)
     private val renderer = TileRenderer().apply {
@@ -105,6 +107,16 @@ class CarSurfaceRenderer(
 
                 TileRenderer.Target.PLAY_PAUSE -> {
                     MediaTransport.toggle()
+                    draw()
+                }
+
+                TileRenderer.Target.NOTIF_REFRESH -> {
+                    OmarchyNotificationListener.refresh(appContext)
+                    draw()
+                }
+
+                TileRenderer.Target.NOTIF_DISMISS -> {
+                    OmarchyNotificationListener.dismissDisplayed(appContext)
                     draw()
                 }
 

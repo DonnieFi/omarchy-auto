@@ -127,15 +127,26 @@ adb shell pm grant com.omarchy.auto.launcher android.permission.ACCESS_FINE_LOCA
 Notification access enables both the Comms tile and MediaSession discovery.
 Without it the UI says so instead of inventing data.
 
-### Android Auto
+### Android Auto — private Play test
 
-1. Install the `auto` APK.
-2. Open **Omarchy Auto setup** on the phone and grant notification access,
-   location, and the service notification. [Setup screen](docs/img/setup-1280x720.png).
-3. In Android Auto settings, enable Developer mode, then enable **Unknown
-   sources** (where available).
-4. Connect the phone to the car over USB and launch **Omarchy Auto** from the
-   Android Auto launcher.
+Android Auto does not trust an ADB-sideloaded Car App Library app. The reliable
+private route is **Play Internal App Sharing**: it installs the build from Play,
+without a public listing or review, and accepts a debuggable APK.
+
+1. In Play Console, create an app with package name `com.omarchy.auto`.
+2. **Test and release → Internal app sharing**, upload
+   `auto/build/outputs/apk/debug/auto-debug.apk`.
+3. Copy the sharing link. On the phone, uninstall the debug `com.omarchy.auto`
+   package first, then open the link and install it from Play.
+4. Open **Omarchy Auto setup** and grant notification access, location, and the
+   service notification. [Setup screen](docs/img/setup-1280x720.png).
+5. Connect the phone to the car over USB and launch **Omarchy Auto** from the
+   Android Auto launcher. Unknown sources is not required for the Play-installed
+   build.
+
+The debug APK is re-signed by Internal App Sharing, so the old ADB-installed
+copy must be removed first. This is still a private test app; it is not a public
+release.
 
 The car app uses the Car App Library **NAVIGATION** category. It draws the five
 tiles into `NavigationTemplate`'s map surface through
@@ -146,11 +157,11 @@ top-bar `THEME` button for hosts that forward surface clicks.
 > **Sideloading caveat:** current Google documentation says the Android Auto
 > "Unknown sources" developer option applies to media, messaging, and parked
 > apps, but *not* to Car App Library apps. There is also a 2026 field report of
-> sideloaded navigation apps disappearing from the AA launcher. This debug build
-> uses `HostValidator.ALLOW_ALL_HOSTS_VALIDATOR`; if your AA build hides it, use
-> Play Internal App Sharing / an Internal Test Track, or a dev phone with an AA
-> version that still permits it. Do not claim the app works on a car until you
-> have seen it there.
+> sideloaded navigation apps disappearing from the AA launcher. Internal App
+> Sharing / an Internal Test Track is the documented private test route. The
+> debug build uses `HostValidator.ALLOW_ALL_HOSTS_VALIDATOR`; the release build
+> now allows the official AA host certificates. Do not claim the car path works
+> until it has been seen on a real host.
 
 ## Architecture
 
