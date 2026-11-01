@@ -57,3 +57,6 @@ keystore.properties
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# local car photos/videos
+media/
