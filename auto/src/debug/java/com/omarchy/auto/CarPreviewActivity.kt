@@ -51,23 +51,36 @@ class CarPreviewActivity : Activity() {
             "home" to TileId.HOME,
         )
         for ((name, tile) in states) {
-            val bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-            val renderer = TileRenderer().apply { setBackground(wallpaper) }
-            if (tile != null) renderer.toggle(tile)
-            renderer.draw(
-                canvas = canvas,
-                width = WIDTH,
-                height = HEIGHT,
-                state = state,
-                themeIndex = 0,
-                mode = TileRenderer.Mode.CAR,
-            )
-            previewLabel(canvas)
-            val file = File(output, "car-$name.png")
-            FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            Log.i(TAG, "Wrote ${file.absolutePath}")
+            render(wallpaper, state, output, "car-$name.png", tile, overlayKey = null)
         }
+        render(wallpaper, state, output, "car-comms-overlay.png", TileId.COMMS, overlayKey = "2")
+    }
+
+    private fun render(
+        wallpaper: Bitmap?,
+        state: DashboardState,
+        output: File,
+        name: String,
+        tile: TileId?,
+        overlayKey: String?,
+    ) {
+        val bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val renderer = TileRenderer().apply { setBackground(wallpaper) }
+        if (tile != null) renderer.toggle(tile)
+        if (overlayKey != null) renderer.openNotification(overlayKey)
+        renderer.draw(
+            canvas = canvas,
+            width = WIDTH,
+            height = HEIGHT,
+            state = state,
+            themeIndex = 0,
+            mode = TileRenderer.Mode.CAR,
+        )
+        previewLabel(canvas)
+        val file = File(output, name)
+        FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        Log.i(TAG, "Wrote ${file.absolutePath}")
     }
 
     private fun previewLabel(canvas: Canvas) {

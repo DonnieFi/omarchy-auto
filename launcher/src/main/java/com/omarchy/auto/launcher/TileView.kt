@@ -114,6 +114,18 @@ class TileView @JvmOverloads constructor(
                         invalidate()
                     }
 
+                    TileRenderer.Target.NOTIFICATION -> {
+                        renderer.openNotification(hit.key)
+                        invalidate()
+                    }
+
+                    TileRenderer.Target.NOTIF_CLOSE,
+                    TileRenderer.Target.OVERLAY_DISMISS,
+                    -> {
+                        renderer.closeNotification()
+                        invalidate()
+                    }
+
                     TileRenderer.Target.TILE_DRIVE -> toggle(TileId.DRIVE)
                     TileRenderer.Target.TILE_MEDIA -> toggle(TileId.MEDIA)
                     TileRenderer.Target.TILE_COMMS -> toggle(TileId.COMMS)

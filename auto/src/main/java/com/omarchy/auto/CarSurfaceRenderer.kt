@@ -130,6 +130,18 @@ class CarSurfaceRenderer(
                     draw()
                 }
 
+                TileRenderer.Target.NOTIFICATION -> {
+                    renderer.openNotification(hit.key)
+                    draw()
+                }
+
+                TileRenderer.Target.NOTIF_CLOSE,
+                TileRenderer.Target.OVERLAY_DISMISS,
+                -> {
+                    renderer.closeNotification()
+                    draw()
+                }
+
                 TileRenderer.Target.TILE_DRIVE -> toggle(TileId.DRIVE)
                 TileRenderer.Target.TILE_MEDIA -> toggle(TileId.MEDIA)
                 TileRenderer.Target.TILE_COMMS -> toggle(TileId.COMMS)

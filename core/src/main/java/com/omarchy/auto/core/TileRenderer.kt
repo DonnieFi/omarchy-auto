@@ -36,6 +36,9 @@ class TileRenderer {
         NEXT_TRACK,
         NOTIF_REFRESH,
         NOTIF_CLEAR,
+        NOTIFICATION,
+        NOTIF_CLOSE,
+        OVERLAY_DISMISS,
         TILE_DRIVE,
         TILE_MEDIA,
         TILE_COMMS,
@@ -43,7 +46,7 @@ class TileRenderer {
         TILE_HOME,
     }
 
-    data class Hit(val target: Target, val index: Int = -1)
+    data class Hit(val target: Target, val index: Int = -1, val key: String? = null)
 
     private data class Layout(
         val themeButton: RectF,
@@ -55,6 +58,9 @@ class TileRenderer {
         val nextTrack: RectF?,
         val notifRefresh: RectF?,
         val notifClear: RectF?,
+        val notifications: List<Pair<String, RectF>>,
+        val notifCard: RectF?,
+        val notifClose: RectF?,
         val tiles: Map<Target, RectF>,
     )
 
@@ -66,6 +72,17 @@ class TileRenderer {
         val next: RectF? = null,
         val refresh: RectF? = null,
         val clear: RectF? = null,
+        val notifications: List<Pair<String, RectF>> = emptyList(),
+    )
+
+    private data class CommsHit(
+        val clear: RectF?,
+        val notifications: List<Pair<String, RectF>>,
+    )
+
+    private data class OverlayHit(
+        val card: RectF,
+        val close: RectF,
     )
 
     private data class MediaHit(
@@ -105,6 +122,9 @@ class TileRenderer {
     @Volatile
     private var background: Bitmap? = null
 
+    @Volatile
+    private var overlayKey: String? = null
+
     fun setSafeArea(rect: Rect?) {
         safeArea = rect?.let { Rect(it) }
     }
@@ -115,6 +135,15 @@ class TileRenderer {
 
     fun toggle(tile: TileId) {
         selected = if (selected == tile) null else tile
+        overlayKey = null
+    }
+
+    fun openNotification(key: String?) {
+        overlayKey = key
+    }
+
+    fun closeNotification() {
+        overlayKey = null
     }
 
     fun draw(
@@ -210,6 +239,12 @@ class TileRenderer {
         }
         drawFooter(canvas, area, theme, unit, state, mode, themeIndex)
 
+        val overlay = overlayKey?.let { key -> state.notifications.firstOrNull { it.key == key } }
+        if (overlayKey != null && overlay == null) overlayKey = null
+        val overlayHit = overlay?.let {
+            drawNotificationOverlay(canvas, area, theme, it, unit, mode)
+        }
+
         lastLayout = Layout(
             themeButton = RectF(themeButton),
             setupButton = stageHit.setup?.let { RectF(it) },
@@ -220,6 +255,9 @@ class TileRenderer {
             nextTrack = stageHit.next?.let { RectF(it) },
             notifRefresh = stageHit.refresh?.let { RectF(it) },
             notifClear = stageHit.clear?.let { RectF(it) },
+            notifications = stageHit.notifications.map { it.first to RectF(it.second) },
+            notifCard = overlayHit?.card?.let { RectF(it) },
+            notifClose = overlayHit?.close?.let { RectF(it) },
             tiles = railRects.associate { (id, rect) ->
                 when (id) {
                     TileId.DRIVE -> Target.TILE_DRIVE
@@ -234,6 +272,11 @@ class TileRenderer {
 
     fun hitTest(x: Float, y: Float): Hit? {
         val layout = lastLayout ?: return null
+        if (overlayKey != null) {
+            layout.notifClose?.takeIf { it.contains(x, y) }?.let { return Hit(Target.NOTIF_CLOSE) }
+            if (layout.notifCard?.contains(x, y) == true) return null
+            return Hit(Target.OVERLAY_DISMISS)
+        }
         if (layout.themeButton.contains(x, y)) return Hit(Target.THEME)
         layout.setupButton?.takeIf { it.contains(x, y) }?.let { return Hit(Target.SETUP) }
         layout.chips.firstOrNull { it.second.contains(x, y) }?.let {
@@ -245,6 +288,9 @@ class TileRenderer {
         layout.nextTrack?.takeIf { it.contains(x, y) }?.let { return Hit(Target.NEXT_TRACK) }
         layout.notifRefresh?.takeIf { it.contains(x, y) }?.let { return Hit(Target.NOTIF_REFRESH) }
         layout.notifClear?.takeIf { it.contains(x, y) }?.let { return Hit(Target.NOTIF_CLEAR) }
+        layout.notifications.firstOrNull { it.second.contains(x, y) }?.let {
+            return Hit(Target.NOTIFICATION, key = it.first)
+        }
         layout.tiles.entries.firstOrNull { it.value.contains(x, y) }?.let {
             return Hit(it.key)
         }
@@ -495,6 +541,7 @@ class TileRenderer {
         var previous: RectF? = null
         var next: RectF? = null
         var clear: RectF? = null
+        var notifications: List<Pair<String, RectF>> = emptyList()
         var setup: RectF? = null
 
         when (id) {
@@ -506,7 +553,11 @@ class TileRenderer {
                 next = hit.next
             }
 
-            TileId.COMMS -> clear = drawComms(canvas, content, theme, state, stageUnit)
+            TileId.COMMS -> {
+                val hit = drawComms(canvas, content, theme, state, stageUnit)
+                clear = hit.clear
+                notifications = hit.notifications
+            }
             TileId.VEHICLE -> drawVehicle(canvas, content, theme, state, stageUnit)
             TileId.HOME -> {
                 setup = drawHomeDetails(
@@ -567,6 +618,7 @@ class TileRenderer {
             next = next,
             refresh = refresh,
             clear = clear,
+            notifications = notifications,
         )
     }
 
@@ -1065,7 +1117,7 @@ class TileRenderer {
         theme: OmarchyTheme,
         state: DashboardState,
         unit: Float,
-    ): RectF? {
+    ): CommsHit {
         if (!state.notificationAccess) {
             text(
                 canvas, "NOTIFICATION ACCESS NEEDED", content.centerX() - measure("NOTIFICATION ACCESS NEEDED", 14f * unit, bold = true) / 2f,
@@ -1076,14 +1128,14 @@ class TileRenderer {
                 canvas, hint, content.centerX() - measure(hint, 10f * unit) / 2f,
                 content.centerY() + 18f * unit, 10f * unit, theme.dim,
             )
-            return null
+            return CommsHit(clear = null, notifications = emptyList())
         }
         if (state.notifications.isEmpty()) {
             text(
                 canvas, "NO NOTIFICATIONS", content.centerX() - measure("NO NOTIFICATIONS", 14f * unit, bold = true) / 2f,
                 content.centerY(), 14f * unit, theme.dim, bold = true,
             )
-            return null
+            return CommsHit(clear = null, notifications = emptyList())
         }
 
         val headerH = 30f * unit
@@ -1116,17 +1168,20 @@ class TileRenderer {
         val maxItems = if (listHeight > 4f * 54f * unit) 4 else 3
         val items = state.notifications.take(maxItems)
         val rowH = minOf(54f * unit, listHeight / items.size)
+        val rows = mutableListOf<Pair<String, RectF>>()
         items.forEachIndexed { index, item ->
             val top = listTop + index * rowH
             val bottom = top + rowH - 6f * unit
+            val row = RectF(content.left, top, content.right, bottom)
+            rows += item.key to row
             fill.style = Paint.Style.FILL
             fill.color = if (index == 0) withAlpha(theme.surfaceAlt, 226) else Color.TRANSPARENT
-            canvas.drawRect(content.left, top, content.right, bottom, fill)
+            canvas.drawRect(row, fill)
             if (index == 0) {
                 stroke.style = Paint.Style.STROKE
                 stroke.strokeWidth = 1f * unit
                 stroke.color = theme.border
-                canvas.drawRect(content.left, top, content.right, bottom, stroke)
+                canvas.drawRect(row, stroke)
             }
             fill.color = theme.accent
             canvas.drawRect(content.left, top, content.left + 3f * unit, bottom, fill)
@@ -1150,7 +1205,119 @@ class TileRenderer {
                 9f * unit, theme.dim, maxWidth = content.width() - 18f * unit,
             )
         }
-        return clear
+        return CommsHit(clear = clear, notifications = rows)
+    }
+
+    private fun drawNotificationOverlay(
+        canvas: Canvas,
+        area: RectF,
+        theme: OmarchyTheme,
+        item: NotificationItem,
+        unit: Float,
+        mode: Mode,
+    ): OverlayHit {
+        val overlayUnit = unit * if (mode == Mode.CAR) 1.8f else 1.1f
+        fill.style = Paint.Style.FILL
+        fill.color = Color.argb(190, 4, 6, 14)
+        canvas.drawRect(area, fill)
+
+        val width = minOf(area.width() * 0.72f, 1180f * unit)
+        val height = minOf(area.height() * 0.72f, 470f * unit)
+        val card = RectF(
+            area.centerX() - width / 2f,
+            area.centerY() - height / 2f,
+            area.centerX() + width / 2f,
+            area.centerY() + height / 2f,
+        )
+        fill.color = withAlpha(theme.surface, 252)
+        canvas.drawRoundRect(card, 4f * overlayUnit, 4f * overlayUnit, fill)
+        stroke.style = Paint.Style.STROKE
+        stroke.strokeWidth = 2f * overlayUnit
+        stroke.color = theme.accent
+        canvas.drawRoundRect(card, 4f * overlayUnit, 4f * overlayUnit, stroke)
+        fill.color = theme.accent
+        canvas.drawRect(
+            card.left + 4f * overlayUnit,
+            card.top,
+            card.right - 4f * overlayUnit,
+            card.top + 3f * overlayUnit,
+            fill,
+        )
+
+        val pad = 24f * overlayUnit
+        val appSize = 10f * overlayUnit
+        val titleSize = 20f * overlayUnit
+        val bodySize = 12f * overlayUnit
+        val lineHeight = 18f * overlayUnit
+        val contentWidth = card.width() - pad * 2f
+
+        text(
+            canvas,
+            item.app.uppercase(Locale.US),
+            card.left + pad,
+            card.top + pad + appSize,
+            appSize,
+            theme.accent,
+            bold = true,
+            maxWidth = contentWidth * 0.62f,
+        )
+        val time = timeFormat.format(Date(item.postedAt))
+        text(
+            canvas,
+            time,
+            card.right - pad - measure(time, appSize),
+            card.top + pad + appSize,
+            appSize,
+            theme.dim,
+        )
+        var baseline = card.top + pad + appSize + 16f * overlayUnit + titleSize
+        text(
+            canvas,
+            item.title.ifBlank { "NOTIFICATION" },
+            card.left + pad,
+            baseline,
+            titleSize,
+            theme.foreground,
+            bold = true,
+            maxWidth = contentWidth,
+        )
+        baseline += 18f * overlayUnit
+
+        val closeLabel = "CLOSE"
+        val closeTextSize = 9f * overlayUnit
+        val closeWidth = measure(closeLabel, closeTextSize, bold = true) + 24f * overlayUnit
+        val closeHeight = 30f * overlayUnit
+        val close = RectF(
+            card.right - pad - closeWidth,
+            card.bottom - pad - closeHeight,
+            card.right - pad,
+            card.bottom - pad,
+        )
+        val bodyBottom = close.top - 18f * overlayUnit
+        val maxLines = ((bodyBottom - baseline) / lineHeight).toInt().coerceAtLeast(1)
+        val lines = wrappedLines(item.text.ifBlank { item.title }, bodySize, contentWidth, maxLines)
+        lines.forEachIndexed { index, line ->
+            text(
+                canvas,
+                line,
+                card.left + pad,
+                baseline + index * lineHeight,
+                bodySize,
+                theme.foreground,
+                maxWidth = contentWidth,
+            )
+        }
+
+        text(
+            canvas,
+            "TAP OUTSIDE TO CLOSE",
+            card.left + pad,
+            card.bottom - pad - 6f * overlayUnit,
+            7f * overlayUnit,
+            theme.dim,
+        )
+        drawTextButton(canvas, close, closeLabel, theme, overlayUnit)
+        return OverlayHit(card = card, close = close)
     }
 
     private fun drawVehicle(
@@ -1247,6 +1414,42 @@ class TileRenderer {
         }
         canvas.restore()
         return null
+    }
+
+    private fun wrappedLines(
+        value: String,
+        size: Float,
+        maxWidth: Float,
+        maxLines: Int,
+    ): List<String> {
+        val paint = textPaint
+        paint.textSize = size * fontScale
+        val all = mutableListOf<String>()
+        for (paragraph in value.split('\n')) {
+            var line = ""
+            for (word in paragraph.split(' ')) {
+                if (word.isEmpty()) continue
+                val candidate = if (line.isEmpty()) word else "$line $word"
+                if (paint.measureText(candidate) <= maxWidth || line.isEmpty()) {
+                    line = candidate
+                } else {
+                    all += line
+                    line = word
+                }
+            }
+            all += line
+        }
+        if (all.size <= maxLines) return all
+        val trimmed = all.take(maxLines).toMutableList()
+        if (trimmed.isNotEmpty()) {
+            trimmed[trimmed.lastIndex] = TextUtils.ellipsize(
+                trimmed.last() + " …",
+                paint,
+                maxWidth,
+                TextUtils.TruncateAt.END,
+            ).toString()
+        }
+        return trimmed
     }
 
     private fun text(
