@@ -1,13 +1,17 @@
 package com.omarchy.auto
 
+import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Rect
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
 import android.view.Surface
+import com.omarchy.auto.core.AppBackground
 import com.omarchy.auto.core.LiveDataStore
+import com.omarchy.auto.core.MediaTransport
 import com.omarchy.auto.core.ThemeStore
+import com.omarchy.auto.core.TileId
 import com.omarchy.auto.core.TileRenderer
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -24,10 +28,13 @@ import java.util.concurrent.locks.ReentrantLock
  */
 class CarSurfaceRenderer(
     private val surface: Surface,
+    context: Context,
 ) {
     private val thread = HandlerThread("omarchy-car-surface").apply { start() }
     private val handler = Handler(thread.looper)
-    private val renderer = TileRenderer()
+    private val renderer = TileRenderer().apply {
+        setBackground(AppBackground.load(context))
+    }
     private val drawLock = ReentrantLock()
     private val released = AtomicBoolean(false)
 
@@ -96,9 +103,24 @@ class CarSurfaceRenderer(
                     draw()
                 }
 
+                TileRenderer.Target.PLAY_PAUSE -> {
+                    MediaTransport.toggle()
+                    draw()
+                }
+
+                TileRenderer.Target.TILE_DRIVE -> toggle(TileId.DRIVE)
+                TileRenderer.Target.TILE_MEDIA -> toggle(TileId.MEDIA)
+                TileRenderer.Target.TILE_COMMS -> toggle(TileId.COMMS)
+                TileRenderer.Target.TILE_VEHICLE -> toggle(TileId.VEHICLE)
+                TileRenderer.Target.TILE_HOME -> toggle(TileId.HOME)
                 else -> Unit
             }
         }
+    }
+
+    private fun toggle(tile: TileId) {
+        renderer.toggle(tile)
+        draw()
     }
 
     private fun draw() {

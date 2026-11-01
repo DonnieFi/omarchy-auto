@@ -25,7 +25,8 @@ In:
   `NavigationTemplate` + `AppManager.setSurfaceCallback`.
 - Phone launcher APK (`com.omarchy.auto.launcher`) with the same five tiles,
   launching real apps and returning on Back.
-- Five tiles: Drive, Media, Comms, Vehicle, Home.
+- Five small tiles in a right-side vertical rail: Drive, Media, Comms, Vehicle,
+  Home. One engaged tile fills a large left stage.
 - Four Omarchy themes, one-tap switch from the AA action strip, the canvas top
   bar, and the Home theme chips.
 - Live clock and theme.
@@ -33,13 +34,17 @@ In:
   play/pause state (read-only).
 - Live notifications from NotificationListenerService.
 - Live GPS speed from LocationManager.
-- Vehicle tile stays mock with a visible `MOCK` label until OBD-II.
+- Vehicle tile stays mock with a visible `MOCK` label until OBD-II; Torque is
+  intentionally not wired up yet.
+- Supplied Tom Ballard Tokyo Studio (“Tokyo Knight”) wallpaper from a local,
+  uncommitted asset; clean builds use an original neon-road fallback.
 - Debug-signed APKs from one documented command.
 
 Out:
 
 - Play Store submission, production signing, release distribution.
-- Calls/voice routing, notification quick reply, media transport commands.
+- Calls/voice routing, notification quick reply, next/previous transport
+  controls (play/pause is wired).
 - OBD-II, reverse camera, CAN bus, steering-wheel controls.
 - Linux head-unit installation in v1.
 - Pixel projection of Google Maps inside the Omarchy UI.
@@ -90,6 +95,7 @@ Setup screen explains and requests them.
 | Clock | system time, 1 Hz redraw | working |
 | Theme | in-app ThemeStore/SharedPreferences | working |
 | Now playing | MediaSessionManager + MediaController | working in launcher; AA wired |
+| Play/pause | MediaTransport -> MediaController.TransportControls | implemented; host/device verification pending |
 | Artwork | MediaMetadata bitmap | working when provided |
 | Notifications | NotificationListenerService | working in launcher |
 | GPS speed | LocationManager GPS_PROVIDER | working; bench speed 0 |
@@ -153,7 +159,7 @@ useful history.
       notifications work, GPS fix obtained, tile launch/back works.
 - [ ] Real Android Auto car screen over USB.
 - [ ] Real AA theme switch + live Media tile on the car screen.
-- [x] 1280×720 capture in `docs/img/` (phone launcher, clearly labeled).
+- [x] 1280×720 capture in `docs/img/` (phone launcher, fallback background, clearly labeled).
 - [x] Vehicle mock visibly labeled.
 
 ## Risks
@@ -169,6 +175,9 @@ useful history.
   must not log message bodies and should add an allow-list.
 - **Scope.** One DPI/layout target (1280×720 landscape) is the demo; portrait
   phone layout is a secondary target.
+- **Wallpaper rights.** The exact supplied Tokyo Studio artwork is local-only
+  until its upstream media rights are cleared. Do not publish a build/screenshot
+  with it.
 
 ## Open questions
 

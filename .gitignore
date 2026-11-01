@@ -43,3 +43,6 @@ local.properties
 captures/
 *.jks
 *.keystore
+
+# Local, uncommitted wallpaper assets
+local-assets/

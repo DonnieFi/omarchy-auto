@@ -192,3 +192,44 @@ such in the docs.
 
 **Consequences:** Demos stay honest. A connected state must be earned by a real
 source, not hard-coded.
+
+## ADR-0010 — Right-side tile rail plus one large content stage
+
+**Status:** accepted (2026-11-01 UI revision)
+
+**Context:** The equal-grid layout made the car content and phone content the
+same size. Maps, now playing, and notification lists need more room when
+engaged; the five fixed tiles still need to stay one tap away. Torque/OBD is not
+ready for the demo.
+
+**Decision:** Put all five small tiles in a narrow right-side, top-to-bottom
+rail. The app starts with no tile selected; the stage is empty so the wallpaper
+is visible. Tapping a rail tile selects it and fills the large left stage with
+that tile's content; tapping it again clears the stage. The stage carries the primary action:
+`OPEN MAPS` / `OPEN PLAYER` / `OPEN MESSAGES` / `OPEN SETTINGS` on the phone.
+Media gets an in-app play/pause control through `MediaTransport`. The Vehicle
+tile stays as a visibly mocked stage but Torque is not launched.
+
+**Consequences:** The rail preserves one-tap access; the stage gives maps and
+media a filmable size. Android Auto uses the same rail/stage geometry and
+forwarded surface clicks; the host action strip remains theme-only.
+
+## ADR-0011 — Roadster wallpaper is a local, uncommitted asset
+
+**Status:** accepted
+
+**Context:** The supplied Tom Ballard Tokyo Studio image (the owner calls it the
+Tokyo Knight background) is the requested visual anchor, but the upstream
+theme's CREDITS says the original photographer/source and media redistribution
+licence were not established. The theme's MIT licence covers the
+theme code/configuration, not the image.
+
+**Decision:** Do not commit the wallpaper. `local-assets/` is ignored and a
+licensed local copy can be embedded in a debug build as `assets/wallpaper.jpg`.
+The renderer also reads a user-supplied `wallpaper.jpg` from app-private files.
+Clean builds use an original, code-drawn neon-road fallback. The README
+screenshot uses the fallback.
+
+**Consequences:** The private demo can show the exact Roadster image on the
+owner's phone without redistributing it. Before public launch, either clear the
+media rights or keep the original fallback. See `docs/ASSETS.md`.

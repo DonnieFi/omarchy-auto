@@ -35,6 +35,8 @@ launcher/build/outputs/apk/debug/launcher-debug.apk
 - Do **not** present test media, notifications, or mock tiles as real data.
   Label fixtures and mock content.
 - Do not commit `local.properties`, keystores, APKs, or generated build output.
+- Do not commit the Tokyo Roadster wallpaper. Its upstream media rights are not
+  established; use `local-assets/` (ignored) and read `docs/ASSETS.md`.
 
 ## PRs and reviews
 

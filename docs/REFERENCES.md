@@ -87,3 +87,13 @@ aarch64 support.
 - [Qt Quick software adaptation](https://doc.qt.io/qt-6/qtquick-visualcanvas-adaptations-software.html)
   — what the software renderer supports and omits. The tablet probe used
   `QT_QUICK_BACKEND=software`.
+
+## Wallpaper source
+
+- [tcballard/omarchy-theme-tokyo-roadster](https://github.com/tcballard/omarchy-theme-tokyo-roadster) —
+  theme code MIT, Copyright (c) 2026 Tom Ballard. The attached
+  [CREDITS](https://github.com/tcballard/omarchy-theme-tokyo-roadster/blob/main/CREDITS.md)
+  says the Roadster photographs/artworks are user-supplied and the original
+  photographer, source URL, and media redistribution licence were not
+  established. The image is therefore local-only and not committed; see
+  `docs/ASSETS.md`.

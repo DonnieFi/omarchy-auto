@@ -100,10 +100,9 @@ class MainActivity : Activity() {
                 Intent(Intent.ACTION_VIEW, Uri.parse("sms:")),
             )
 
-            TileId.VEHICLE -> open(
-                listOf("org.prowl.torque"),
-                null,
-            )
+            // Vehicle remains a visible mock for now; Torque is intentionally
+            // not wired up.
+            TileId.VEHICLE -> Unit
 
             TileId.HOME -> open(
                 emptyList(),
@@ -125,7 +124,6 @@ class MainActivity : Activity() {
         val label = when {
             packages.contains("com.spotify.music") -> "Spotify or YouTube Music"
             packages.contains("com.google.android.apps.maps") -> "Maps"
-            packages.contains("org.prowl.torque") -> "Torque"
             else -> "an app for this tile"
         }
         Toast.makeText(this, "Install $label to open this tile", Toast.LENGTH_SHORT).show()

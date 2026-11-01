@@ -4,7 +4,6 @@
         <package android:name="com.google.android.apps.maps" />
         <package android:name="com.spotify.music" />
         <package android:name="com.google.android.apps.youtube.music" />
-        <package android:name="org.prowl.torque" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="sms" />

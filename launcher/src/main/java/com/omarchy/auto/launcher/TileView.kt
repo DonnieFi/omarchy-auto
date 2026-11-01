@@ -7,8 +7,10 @@ import android.os.Looper
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
+import com.omarchy.auto.core.AppBackground
 import com.omarchy.auto.core.DashboardState
 import com.omarchy.auto.core.LiveDataStore
+import com.omarchy.auto.core.MediaTransport
 import com.omarchy.auto.core.ThemeStore
 import com.omarchy.auto.core.TileId
 import com.omarchy.auto.core.TileRenderer
@@ -39,6 +41,7 @@ class TileView @JvmOverloads constructor(
         isFocusable = true
         contentDescription = "Omarchy Auto launcher"
         setBackgroundColor(ThemeStore.current().background)
+        renderer.setBackground(AppBackground.load(context))
     }
 
     override fun onAttachedToWindow() {
@@ -84,16 +87,27 @@ class TileView @JvmOverloads constructor(
                     }
 
                     TileRenderer.Target.SETUP -> onSetup?.invoke()
-                    TileRenderer.Target.TILE_DRIVE -> onTileTap?.invoke(TileId.DRIVE)
-                    TileRenderer.Target.TILE_MEDIA -> onTileTap?.invoke(TileId.MEDIA)
-                    TileRenderer.Target.TILE_COMMS -> onTileTap?.invoke(TileId.COMMS)
-                    TileRenderer.Target.TILE_VEHICLE -> onTileTap?.invoke(TileId.VEHICLE)
-                    TileRenderer.Target.TILE_HOME -> onTileTap?.invoke(TileId.HOME)
+                    TileRenderer.Target.STAGE_OPEN -> renderer.selected?.let { onTileTap?.invoke(it) }
+                    TileRenderer.Target.PLAY_PAUSE -> {
+                        MediaTransport.toggle()
+                        invalidate()
+                    }
+
+                    TileRenderer.Target.TILE_DRIVE -> toggle(TileId.DRIVE)
+                    TileRenderer.Target.TILE_MEDIA -> toggle(TileId.MEDIA)
+                    TileRenderer.Target.TILE_COMMS -> toggle(TileId.COMMS)
+                    TileRenderer.Target.TILE_VEHICLE -> toggle(TileId.VEHICLE)
+                    TileRenderer.Target.TILE_HOME -> toggle(TileId.HOME)
                 }
                 performClick()
                 return true
             }
         }
         return super.onTouchEvent(event)
+    }
+
+    private fun toggle(tile: TileId) {
+        renderer.toggle(tile)
+        invalidate()
     }
 }

@@ -34,7 +34,7 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
         override fun onSurfaceAvailable(surfaceContainer: SurfaceContainer) {
             val surface = surfaceContainer.surface ?: return
             surfaceRenderer?.stop()
-            surfaceRenderer = CarSurfaceRenderer(surface).also {
+            surfaceRenderer = CarSurfaceRenderer(surface, carContext).also {
                 applySafeArea(it)
                 it.start()
             }

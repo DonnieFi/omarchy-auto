@@ -7,9 +7,10 @@ The same Kotlin Canvas renderer powers a full-screen phone launcher.
 
 ![Omarchy Auto phone launcher at 1280×720](docs/img/launcher-1280x720.png)
 
-*Phone launcher at 1280×720. The track is a local test WAV and the Shell
-notification is synthetic test content; this is not Android Auto footage. The
-car host has not been available yet.*
+*Phone launcher at 1280×720, opening with every tile minimized. This is the
+clean-clone fallback background. The local phone build uses the supplied Tom
+Ballard Tokyo Studio image via `local-assets/` (not committed); the visible test
+metadata is not Android Auto footage.*
 
 ## Status — v0.1 redirect (2026-11-01)
 
@@ -21,17 +22,21 @@ in the docs archive as future work.
 Built and checked on this machine:
 
 - `./gradlew assembleDebug` produces two signed debug APKs.
-- Phone launcher runs on an Android 15 emulator. Theme switch, live
-  MediaSession, live notifications, a GPS fix, tile launch, and Back return
-  were exercised at 1280×720 and 1080×2400.
+- Phone launcher runs on an Android 15 emulator and a Samsung S24 FE (Android
+  17). Theme switch, live MediaSession, live notifications, a GPS fix, stage
+  selection, tile launch, Back return, and portrait/landscape rotation were
+  exercised at 1280×720 and 1080×2400.
+- The layout is now a **narrow right-side rail of small tiles** plus one large
+  content stage. Tap a rail tile to engage it. Media has an in-app play/pause
+  control; the stage `OPEN` button launches the real app.
 - Android Auto APK compiles with the Car App Library navigation template and
   surface callback. **It has not been shown on a real Android Auto car screen.**
 - The Desktop Head Unit was attempted, but the emulator image's Android Auto
   app is a Play Store stub and the image has no Play Store.
 
 Live data is ordered as requested: clock + theme, now playing (MediaSession),
-notifications (NotificationListener), GPS speed. The Vehicle tile is explicitly
-`MOCK` until OBD-II.
+notifications (NotificationListener), GPS speed. The Vehicle tile remains a
+visible mock; Torque is intentionally not wired up yet.
 
 ## Build
 
@@ -78,18 +83,31 @@ adb shell am start -n com.omarchy.auto.launcher/.MainActivity
 ```
 
 Or choose **Omarchy Auto Launcher** as the home app. It is a five-tile demo
-launcher, not a full app drawer. Tapping:
+launcher, not a full app drawer.
 
-| Tile | Opens |
-|---|---|
-| Drive | Google Maps |
-| Media | Spotify, then YouTube Music |
-| Comms | the default SMS app |
-| Vehicle | Torque (mock data until OBD) |
-| Home | Android Settings; theme chips cycle themes |
+The app opens with **all tiles minimized** — including Drive/navigation — so the
+wallpaper is the first thing you see. Tap a rail tile to expand it; tap the same
+tile again to minimize. The stage has an `OPEN` action for real apps:
+
+| Rail tile | Stage | OPEN action |
+|---|---|---|
+| Drive | large demo map/GPS speed | Google Maps |
+| Media | large now-playing/audio art + play/pause | Spotify, then YouTube Music |
+| Comms | large notification list | default SMS app |
+| Vehicle | large mock vehicle panel | none — Torque deferred |
+| Home | clock, theme chips, setup | Android Settings |
 
 Back from the launched app returns to the launcher. The top-right `THEME`
 button cycles Tokyo Night, Osaka Jade, Gruvbox, and Catppuccin.
+
+### Roadster background
+
+The app looks for `wallpaper.jpg` (then legacy `roadster.jpg`) in its files
+directory or the debug-only `local-assets/` directory. That file is **not committed**: the upstream Tokyo
+Roadster theme's CREDITS says the media redistribution rights were not
+established. A local copy makes the car/road wallpaper prominent; a clean clone
+falls back to an original neon-road background. See
+[`docs/ASSETS.md`](docs/ASSETS.md).
 
 ### Permissions
 
@@ -172,10 +190,13 @@ that future path.
 | Media | Live MediaSession metadata/art/progress in launcher; AA app wired, not host-tested |
 | Notifications | Live listener + existing-notification load; launcher verified |
 | GPS speed | Location/GPS speed; launcher got a fix at 0 km/h on the bench |
-| Vehicle | Mock, visible `MOCK` label |
+| Vehicle | Mock, visible `MOCK` label; no Torque launch |
+| Right rail + large stage | Verified on emulator and phone |
+| Rotation | Portrait/landscape reflow verified on the S24 FE |
+| Media play/pause | Wired to MediaTransport; live session not re-verified end-to-end |
 | AA NavigationTemplate + SurfaceCallback | Compiles; real host unverified |
-| Phone tile launch/back | Verified with YouTube Music |
-| 1280×720 screenshot | `docs/img/launcher-1280x720.png` (phone launcher, not AA) |
+| Phone stage OPEN + Back | Verified with YouTube Music/Maps path |
+| 1280×720 screenshot | `docs/img/launcher-1280x720.png` (fallback background) |
 
 ## Verification
 
@@ -200,11 +221,14 @@ that future path.
   a real host.
 - Media control buttons are visual only; playback control commands are not sent.
 - Notifications are not yet allow-listed; OTP/2FA filtering is future work.
-- Vehicle data is mock until OBD-II.
+- Vehicle data is mock until OBD-II; Torque is not wired up.
+- The exact Roadster wallpaper is local-only; the repo ships only the original
+  fallback background until its media rights are resolved.
 - No Play Store submission, no production signing, no release build.
 - Linux/Quickshell remains future work; it is not in the APKs.
 
 ## License
 
-TBD. AndroidX/Car App Library is Apache-2.0. Omarchy themes are MIT. See
-`docs/REFERENCES.md`.
+TBD. AndroidX/Car App Library is Apache-2.0. Omarchy themes are MIT. The
+Roadster wallpaper is **not** covered by that licence and is not committed; see
+`docs/ASSETS.md`. See `docs/REFERENCES.md`.

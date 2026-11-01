@@ -88,8 +88,10 @@ class MediaWatcher(
         wanted = false
         started = false
         handler.removeCallbacks(progressTicker)
+        val previous = controller
         controller?.unregisterCallback(controllerCallback)
         controller = null
+        MediaTransport.detach(previous)
         try {
             manager?.removeOnActiveSessionsChangedListener(sessionsListener)
         } catch (_: Exception) {
@@ -124,8 +126,10 @@ class MediaWatcher(
     private fun bind(next: MediaController?) {
         if (!wanted) return
         handler.removeCallbacks(progressTicker)
+        MediaTransport.detach(controller)
         controller?.unregisterCallback(controllerCallback)
         controller = next
+        MediaTransport.attach(next)
         if (next == null) {
             onUpdate(null)
             return
