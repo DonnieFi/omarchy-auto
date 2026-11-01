@@ -81,9 +81,9 @@ aarch64 support.
 
 ## Tablet and Qt
 
-- Local feasibility notes: `/mnt/adata/opt/omarchy_port_7/flash/omarchy-port-feasibility.md`
-  and `/mnt/adata/opt/omarchy_port_7/omarchy-degaswifi/docs/`. These establish
-  Qt 6.11.1 and Quickshell 0.3.2 on the Tab 4, not this shell specifically.
+- ARMarchy/tablet feasibility notes live in the author's local
+  `omarchy_port_7` workspace (not committed here). They establish Qt 6.11.1 and
+  Quickshell 0.3.2 on the Tab 4, not this Android app specifically.
 - [Qt Quick software adaptation](https://doc.qt.io/qt-6/qtquick-visualcanvas-adaptations-software.html)
   — what the software renderer supports and omits. The tablet probe used
   `QT_QUICK_BACKEND=software`.

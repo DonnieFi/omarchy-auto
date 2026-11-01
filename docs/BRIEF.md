@@ -145,7 +145,8 @@ useful history.
 
 ## Acceptance checklist for the redirect
 
-- [x] Git repo created, public, initial scaffold pushed.
+- [x] Git repo created as **private**; initial scaffold and redirect pushed.
+- [ ] Public launch repository (after review and the car demo).
 - [x] Two Android targets share one tile model/theme/renderer.
 - [x] `./gradlew assembleDebug` builds signed debug APKs.
 - [x] Phone launcher runs, theme switch works, live MediaSession and

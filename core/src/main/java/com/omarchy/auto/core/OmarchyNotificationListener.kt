@@ -70,6 +70,7 @@ class OmarchyNotificationListener : NotificationListenerService() {
         if (sbn.packageName == packageName) return false
         if (n.flags and Notification.FLAG_ONGOING_EVENT != 0) return false
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return false
+        if (n.visibility == Notification.VISIBILITY_SECRET) return false
         if (n.category == Notification.CATEGORY_TRANSPORT) return false
         if (n.category == Notification.CATEGORY_PROGRESS) return false
         if (n.category == Notification.CATEGORY_SERVICE) return false

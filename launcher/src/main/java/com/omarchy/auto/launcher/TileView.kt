@@ -37,6 +37,7 @@ class TileView @JvmOverloads constructor(
     init {
         isClickable = true
         isFocusable = true
+        contentDescription = "Omarchy Auto launcher"
         setBackgroundColor(ThemeStore.current().background)
     }
 
@@ -89,6 +90,7 @@ class TileView @JvmOverloads constructor(
                     TileRenderer.Target.TILE_VEHICLE -> onTileTap?.invoke(TileId.VEHICLE)
                     TileRenderer.Target.TILE_HOME -> onTileTap?.invoke(TileId.HOME)
                 }
+                performClick()
                 return true
             }
         }

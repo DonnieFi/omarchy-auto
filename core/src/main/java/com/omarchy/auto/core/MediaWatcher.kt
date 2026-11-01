@@ -27,22 +27,33 @@ class MediaWatcher(
 
     private var controller: MediaController? = null
     private var started = false
+    private var wanted = false
 
     private val sessionsListener =
         MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
+            if (!wanted) return@OnActiveSessionsChangedListener
             bind(choose(controllers.orEmpty()))
         }
 
     private val controllerCallback = object : MediaController.Callback() {
-        override fun onMetadataChanged(metadata: MediaMetadata?) = publish()
-        override fun onPlaybackStateChanged(state: PlaybackState?) = publish()
+        override fun onMetadataChanged(metadata: MediaMetadata?) {
+            if (wanted) publish()
+        }
+
+        override fun onPlaybackStateChanged(state: PlaybackState?) {
+            if (!wanted) return
+            publish()
+            scheduleTicker()
+        }
+
         override fun onSessionDestroyed() {
-            bindActive()
+            if (wanted) bindActive()
         }
     }
 
     private val progressTicker = object : Runnable {
         override fun run() {
+            if (!wanted) return
             publish()
             if (controller?.playbackState?.state == PlaybackState.STATE_PLAYING) {
                 handler.postDelayed(this, 1000L)
@@ -51,7 +62,8 @@ class MediaWatcher(
     }
 
     fun start() {
-        if (started || manager == null) return
+        if (wanted || started || manager == null) return
+        wanted = true
         started = true
         try {
             manager.addOnActiveSessionsChangedListener(
@@ -62,15 +74,18 @@ class MediaWatcher(
             bindActive()
         } catch (_: SecurityException) {
             started = false
+            wanted = false
             onPermissionDenied()
         } catch (_: Exception) {
             started = false
+            wanted = false
             onPermissionDenied()
         }
     }
 
     fun stop() {
-        if (!started) return
+        if (!started && !wanted) return
+        wanted = false
         started = false
         handler.removeCallbacks(progressTicker)
         controller?.unregisterCallback(controllerCallback)
@@ -83,11 +98,16 @@ class MediaWatcher(
     }
 
     private fun bindActive() {
+        if (!wanted) return
         try {
             bind(choose(manager?.getActiveSessions(listenerComponent).orEmpty()))
         } catch (_: SecurityException) {
+            started = false
+            wanted = false
             onPermissionDenied()
         } catch (_: Exception) {
+            started = false
+            wanted = false
             onPermissionDenied()
         }
     }
@@ -102,6 +122,7 @@ class MediaWatcher(
     }
 
     private fun bind(next: MediaController?) {
+        if (!wanted) return
         handler.removeCallbacks(progressTicker)
         controller?.unregisterCallback(controllerCallback)
         controller = next
@@ -111,12 +132,18 @@ class MediaWatcher(
         }
         next.registerCallback(controllerCallback, handler)
         publish()
-        if (next.playbackState?.state == PlaybackState.STATE_PLAYING) {
+        scheduleTicker()
+    }
+
+    private fun scheduleTicker() {
+        handler.removeCallbacks(progressTicker)
+        if (controller?.playbackState?.state == PlaybackState.STATE_PLAYING) {
             handler.postDelayed(progressTicker, 1000L)
         }
     }
 
     private fun publish() {
+        if (!wanted) return
         val current = controller ?: run {
             onUpdate(null)
             return

@@ -7,8 +7,9 @@ The same Kotlin Canvas renderer powers a full-screen phone launcher.
 
 ![Omarchy Auto phone launcher at 1280×720](docs/img/launcher-1280x720.png)
 
-*Phone launcher at 1280×720, live MediaSession and notifications. This is not
-Android Auto footage; the car host has not been available yet.*
+*Phone launcher at 1280×720. The track is a local test WAV and the Shell
+notification is synthetic test content; this is not Android Auto footage. The
+car host has not been available yet.*
 
 ## Status — v0.1 redirect (2026-11-01)
 
@@ -71,7 +72,8 @@ adb install -r launcher/build/outputs/apk/debug/launcher-debug.apk
 adb shell am start -n com.omarchy.auto.launcher/.MainActivity
 ```
 
-Or choose **Omarchy Auto Launcher** as the home app. Tapping:
+Or choose **Omarchy Auto Launcher** as the home app. It is a five-tile demo
+launcher, not a full app drawer. Tapping:
 
 | Tile | Opens |
 |---|---|
@@ -106,7 +108,7 @@ Without it the UI says so instead of inventing data.
 
 1. Install the `auto` APK.
 2. Open **Omarchy Auto setup** on the phone and grant notification access,
-   location, and the service notification.
+   location, and the service notification. [Setup screen](docs/img/setup-1280x720.png).
 3. In Android Auto settings, enable Developer mode, then enable **Unknown
    sources** (where available).
 4. Connect the phone to the car over USB and launch **Omarchy Auto** from the

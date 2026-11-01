@@ -757,7 +757,7 @@ class TileRenderer {
             stroke.strokeWidth = 1f * unit
             stroke.color = if (index == themeIndex) theme.accent else theme.border
             canvas.drawRect(chip, stroke)
-            val label = item.name.take(4)
+            val label = item.name.take(5)
             text(
                 canvas, label, chip.centerX() - measure(label, 7f * unit) / 2f,
                 chip.centerY() + 3f * unit, 7f * unit,
@@ -785,17 +785,6 @@ class TileRenderer {
         }
         canvas.restore()
         return null
-    }
-
-    private fun drawPlay(canvas: Canvas, rect: RectF, color: Int) {
-        fill.style = Paint.Style.FILL
-        fill.color = color
-        val path = Path()
-        path.moveTo(rect.left, rect.top)
-        path.lineTo(rect.right, rect.centerY())
-        path.lineTo(rect.left, rect.bottom)
-        path.close()
-        canvas.drawPath(path, fill)
     }
 
     private fun text(

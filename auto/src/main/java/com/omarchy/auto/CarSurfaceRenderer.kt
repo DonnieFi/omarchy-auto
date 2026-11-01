@@ -9,49 +9,71 @@ import android.view.Surface
 import com.omarchy.auto.core.LiveDataStore
 import com.omarchy.auto.core.ThemeStore
 import com.omarchy.auto.core.TileRenderer
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.locks.ReentrantLock
 
 /**
  * Draws the shared five-tile renderer into the Android Auto map surface.
  * The host owns the surrounding template and action strip.
+ *
+ * Car App Library requires the app to release every Surface it receives. This
+ * class is the single owner of that release so a host teardown cannot race a
+ * draw: if stop() cannot quiesce the draw thread, the draw thread releases the
+ * Surface after its final unlock.
  */
 class CarSurfaceRenderer(
     private val surface: Surface,
-    private val width: Int,
-    private val height: Int,
 ) {
     private val thread = HandlerThread("omarchy-car-surface").apply { start() }
     private val handler = Handler(thread.looper)
     private val renderer = TileRenderer()
+    private val drawLock = ReentrantLock()
+    private val released = AtomicBoolean(false)
+
+    @Volatile
+    private var stopped = false
 
     private val tick = object : Runnable {
         override fun run() {
+            if (stopped) return
             draw()
-            handler.postDelayed(this, 1000L)
+            if (!stopped) handler.postDelayed(this, 1000L)
         }
     }
 
+    private val immediateDraw = Runnable {
+        if (!stopped) draw()
+    }
+
     fun start() {
+        if (stopped) return
         handler.post(tick)
     }
 
     fun stop() {
+        if (stopped) return
+        stopped = true
         handler.removeCallbacksAndMessages(null)
         thread.quitSafely()
-        try {
-            // Do not let the host destroy/reuse the Surface while a draw is
-            // still in flight.
-            thread.join(1000L)
+
+        val quiesced = try {
+            drawLock.tryLock(250L, TimeUnit.MILLISECONDS)
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
+            false
         }
+        if (quiesced) {
+            drawLock.unlock()
+            releaseSurface()
+        }
+        // If not quiesced, the in-flight draw releases the Surface in draw().
     }
 
     fun requestDraw() {
-        handler.removeCallbacks(tick)
-        handler.post {
-            draw()
-            handler.postDelayed(tick, 1000L)
-        }
+        if (stopped) return
+        handler.removeCallbacks(immediateDraw)
+        handler.post(immediateDraw)
     }
 
     fun setSafeArea(rect: Rect) {
@@ -59,7 +81,9 @@ class CarSurfaceRenderer(
     }
 
     fun tap(x: Float, y: Float) {
+        if (stopped) return
         handler.post {
+            if (stopped) return@post
             val hit = renderer.hitTest(x, y) ?: return@post
             when (hit.target) {
                 TileRenderer.Target.THEME -> {
@@ -78,27 +102,50 @@ class CarSurfaceRenderer(
     }
 
     private fun draw() {
-        var canvas: Canvas? = null
+        if (stopped) {
+            releaseSurface()
+            return
+        }
+        drawLock.lock()
         try {
-            canvas = surface.lockCanvas(null) ?: return
-            renderer.draw(
-                canvas = canvas,
-                width = canvas.width,
-                height = canvas.height,
-                state = LiveDataStore.state,
-                themeIndex = ThemeStore.index,
-                mode = TileRenderer.Mode.CAR,
-            )
-        } catch (error: Exception) {
-            Log.w(TAG, "Surface draw failed", error)
-        } finally {
-            if (canvas != null) {
+            if (!stopped) {
+                var canvas: Canvas? = null
                 try {
-                    surface.unlockCanvasAndPost(canvas)
+                    canvas = surface.lockCanvas(null)
+                    if (canvas != null) {
+                        renderer.draw(
+                            canvas = canvas,
+                            width = canvas.width,
+                            height = canvas.height,
+                            state = LiveDataStore.state,
+                            themeIndex = ThemeStore.index,
+                            mode = TileRenderer.Mode.CAR,
+                        )
+                    }
                 } catch (error: Exception) {
-                    Log.w(TAG, "Surface post failed", error)
+                    Log.w(TAG, "Surface draw failed", error)
+                } finally {
+                    if (canvas != null) {
+                        try {
+                            surface.unlockCanvasAndPost(canvas)
+                        } catch (error: Exception) {
+                            Log.w(TAG, "Surface post failed", error)
+                        }
+                    }
                 }
             }
+        } finally {
+            drawLock.unlock()
+        }
+        if (stopped) releaseSurface()
+    }
+
+    private fun releaseSurface() {
+        if (!released.compareAndSet(false, true)) return
+        try {
+            surface.release()
+        } catch (error: Exception) {
+            Log.w(TAG, "Surface release failed", error)
         }
     }
 

@@ -23,8 +23,8 @@ import com.omarchy.auto.core.ThemeStore
 class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
 
     private var surfaceRenderer: CarSurfaceRenderer? = null
-    private var currentSurface: android.view.Surface? = null
-    private var safeArea: Rect? = null
+    private var visibleArea: Rect? = null
+    private var stableArea: Rect? = null
 
     private val dataListener: (DashboardState) -> Unit = {
         surfaceRenderer?.requestDraw()
@@ -34,35 +34,27 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
         override fun onSurfaceAvailable(surfaceContainer: SurfaceContainer) {
             val surface = surfaceContainer.surface ?: return
             surfaceRenderer?.stop()
-            if (currentSurface !== surface) {
-                currentSurface?.release()
-            }
-            currentSurface = surface
-            surfaceRenderer = CarSurfaceRenderer(
-                surface = surface,
-                width = surfaceContainer.width,
-                height = surfaceContainer.height,
-            ).also {
-                safeArea?.let(it::setSafeArea)
+            surfaceRenderer = CarSurfaceRenderer(surface).also {
+                applySafeArea(it)
                 it.start()
             }
         }
 
         override fun onSurfaceDestroyed(surfaceContainer: SurfaceContainer) {
+            // CarSurfaceRenderer owns Surface.release(), including the
+            // deferred release when a draw was in flight.
             surfaceRenderer?.stop()
             surfaceRenderer = null
-            surfaceContainer.surface?.release()
-            if (currentSurface === surfaceContainer.surface) currentSurface = null
         }
 
         override fun onVisibleAreaChanged(visibleArea: Rect) {
-            safeArea = Rect(visibleArea)
-            surfaceRenderer?.setSafeArea(visibleArea)
+            this@OmarchyScreen.visibleArea = Rect(visibleArea)
+            surfaceRenderer?.let(::applySafeArea)
         }
 
         override fun onStableAreaChanged(stableArea: Rect) {
-            this@OmarchyScreen.safeArea = Rect(stableArea)
-            surfaceRenderer?.setSafeArea(stableArea)
+            this@OmarchyScreen.stableArea = Rect(stableArea)
+            surfaceRenderer?.let(::applySafeArea)
         }
 
         override fun onClick(x: Float, y: Float) {
@@ -102,6 +94,23 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
                 }
             },
         )
+    }
+
+    private fun applySafeArea(renderer: CarSurfaceRenderer) {
+        // Stable is the persistent area; visible may be dynamic host chrome.
+        // Prefer stable, and intersect if both have been provided.
+        val stable = stableArea
+        val visible = visibleArea
+        val area = when {
+            stable != null && !stable.isEmpty && visible != null && !visible.isEmpty -> {
+                Rect(stable).apply { intersect(visible) }
+            }
+
+            stable != null && !stable.isEmpty -> stable
+            visible != null && !visible.isEmpty -> visible
+            else -> null
+        }
+        if (area != null) renderer.setSafeArea(area)
     }
 
     override fun onGetTemplate(): Template {

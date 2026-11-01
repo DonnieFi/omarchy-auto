@@ -16,6 +16,7 @@ class LocationWatcher(
     private val app = context.applicationContext
     private val manager = app.getSystemService(LocationManager::class.java)
     private var started = false
+    private var wanted = false
 
     fun start() {
         if (started) return
@@ -33,9 +34,14 @@ class LocationWatcher(
             onUpdate(null, false)
             return
         }
+        wanted = true
         started = true
         try {
-            lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)?.let(::publish)
+            // Last-known is useful only while fresh; stale fixes must not be
+            // labelled GPS LIVE. A real callback follows in a second or two.
+            lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                ?.takeIf { System.currentTimeMillis() - it.time in 0..30_000L }
+                ?.let(::publish)
             lm.requestLocationUpdates(
                 LocationManager.GPS_PROVIDER,
                 1000L,
@@ -53,6 +59,7 @@ class LocationWatcher(
     }
 
     fun stop() {
+        wanted = false
         if (!started) return
         started = false
         try {
@@ -76,7 +83,7 @@ class LocationWatcher(
     }
 
     override fun onProviderEnabled(provider: String) {
-        if (provider == LocationManager.GPS_PROVIDER) start()
+        if (provider == LocationManager.GPS_PROVIDER && wanted) start()
     }
 
     @Deprecated("Deprecated in the platform")

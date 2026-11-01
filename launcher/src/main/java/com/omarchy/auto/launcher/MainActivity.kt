@@ -2,6 +2,7 @@ package com.omarchy.auto.launcher
 
 import android.Manifest
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -32,7 +33,10 @@ class MainActivity : Activity() {
 
         val view = TileView(this).apply {
             onSetup = {
-                startActivity(Intent(this@MainActivity, SetupActivity::class.java))
+                startActivity(
+                    Intent(this@MainActivity, SetupActivity::class.java)
+                        .putExtra(SetupActivity.EXTRA_LAUNCHER, true),
+                )
             }
             onTileTap = { tile -> launch(tile) }
         }
@@ -114,13 +118,11 @@ class MainActivity : Activity() {
     private fun open(packages: List<String>, fallback: Intent?) {
         for (pkg in packages) {
             val intent = packageManager.getLaunchIntentForPackage(pkg)
-            if (intent != null) {
-                startActivity(intent)
-                return
-            }
+            if (intent != null && startSafely(intent)) return
         }
-        if (fallback != null && fallback.resolveActivity(packageManager) != null) {
-            startActivity(fallback)
+        if (fallback != null && fallback.resolveActivity(packageManager) != null &&
+            startSafely(fallback)
+        ) {
             return
         }
         val label = when {
@@ -130,6 +132,15 @@ class MainActivity : Activity() {
             else -> "an app for this tile"
         }
         Toast.makeText(this, "Install $label to open this tile", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun startSafely(intent: Intent): Boolean = try {
+        startActivity(intent)
+        true
+    } catch (_: ActivityNotFoundException) {
+        false
+    } catch (_: SecurityException) {
+        false
     }
 
     private fun maybeAskForLocation() {
