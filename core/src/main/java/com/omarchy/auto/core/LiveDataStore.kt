@@ -53,6 +53,26 @@ object LiveDataStore {
         it.copy(speedKph = speedKph, gpsActive = gpsActive)
     }
 
+    fun setLocationFix(
+        speedKph: Float?,
+        gpsActive: Boolean,
+        latitude: Double?,
+        longitude: Double?,
+        bearing: Float,
+        accuracyM: Float?,
+    ) = update {
+        it.copy(
+            speedKph = speedKph,
+            gpsActive = gpsActive,
+            latitude = latitude,
+            longitude = longitude,
+            bearing = bearing,
+            accuracyM = accuracyM,
+        )
+    }
+
+    fun notifyMapUpdated() = update { it.copy(mapRevision = it.mapRevision + 1) }
+
     fun replaceNotifications(items: List<NotificationItem>) = update {
         it.copy(notifications = items.take(8))
     }

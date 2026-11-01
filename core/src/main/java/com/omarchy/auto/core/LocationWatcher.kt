@@ -11,7 +11,14 @@ import android.os.Looper
 
 class LocationWatcher(
     context: Context,
-    private val onUpdate: (speedKph: Float?, active: Boolean) -> Unit,
+    private val onUpdate: (
+        speedKph: Float?,
+        active: Boolean,
+        latitude: Double?,
+        longitude: Double?,
+        bearing: Float,
+        accuracyM: Float?,
+    ) -> Unit,
 ) : LocationListener {
     private val app = context.applicationContext
     private val manager = app.getSystemService(LocationManager::class.java)
@@ -23,15 +30,15 @@ class LocationWatcher(
         if (app.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED
         ) {
-            onUpdate(null, false)
+            onUpdate(null, false, null, null, 0f, null)
             return
         }
         val lm = manager ?: run {
-            onUpdate(null, false)
+            onUpdate(null, false, null, null, 0f, null)
             return
         }
         if (!lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-            onUpdate(null, false)
+            onUpdate(null, false, null, null, 0f, null)
             return
         }
         wanted = true
@@ -51,10 +58,10 @@ class LocationWatcher(
             )
         } catch (_: SecurityException) {
             started = false
-            onUpdate(null, false)
+            onUpdate(null, false, null, null, 0f, null)
         } catch (_: Exception) {
             started = false
-            onUpdate(null, false)
+            onUpdate(null, false, null, null, 0f, null)
         }
     }
 
@@ -79,7 +86,7 @@ class LocationWatcher(
         } catch (_: Exception) {
             // Provider teardown races are harmless.
         }
-        onUpdate(null, false)
+        onUpdate(null, false, null, null, 0f, null)
     }
 
     override fun onProviderEnabled(provider: String) {
@@ -91,6 +98,8 @@ class LocationWatcher(
 
     private fun publish(location: Location) {
         val speed = if (location.hasSpeed()) location.speed * 3.6f else null
-        onUpdate(speed, true)
+        val bearing = if (location.hasBearing()) location.bearing else 0f
+        val accuracy = if (location.hasAccuracy()) location.accuracy else null
+        onUpdate(speed, true, location.latitude, location.longitude, bearing, accuracy)
     }
 }

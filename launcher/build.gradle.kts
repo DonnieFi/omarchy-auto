@@ -2,6 +2,12 @@ plugins {
     id("com.android.application")
 }
 
+// Private/local wallpaper opt-in. Clean and public builds exclude local-assets
+// unless the private release is explicitly built with
+// -Pomarchy.includeLocalAssets=true.
+val includeLocalAssets = (findProperty("omarchy.includeLocalAssets") as String?)
+    ?.toBooleanStrictOrNull() ?: false
+
 android {
     namespace = "com.omarchy.auto.launcher"
     compileSdk = 37
@@ -14,7 +20,9 @@ android {
         versionName = "0.1.0"
     }
 
-    sourceSets["debug"].assets.srcDir(rootProject.file("local-assets"))
+    if (includeLocalAssets) {
+        sourceSets["debug"].assets.srcDir(rootProject.file("local-assets"))
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

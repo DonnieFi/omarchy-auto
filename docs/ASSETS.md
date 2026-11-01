@@ -16,8 +16,11 @@ For that reason:
 
 - `local-assets/` is ignored by git.
 - The clean-clone build uses an original, code-drawn neon-road fallback.
-- A local demo can place a licensed copy at `local-assets/wallpaper.jpg`; the
-  debug APK embeds it as `assets/wallpaper.jpg`.
+- A private demo can place a licensed copy at `local-assets/wallpaper.jpg` and
+  explicitly opt in with `-Pomarchy.includeLocalAssets=true`; that APK/AAB embeds
+  it as `assets/wallpaper.jpg`.
+- Default builds — including release builds without the explicit flag — exclude
+  `local-assets/` and use the fallback.
 - The app also looks for `roadster.jpg` in its private files directory.
 - Do not publish builds, screenshots, or mirrors containing the Roadster image
   until the media rights are cleared.

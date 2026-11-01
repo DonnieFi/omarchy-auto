@@ -8,6 +8,7 @@ class LiveDataController(context: Context) {
     private val app = context.applicationContext
     private var media: MediaWatcher? = null
     private var location: LocationWatcher? = null
+    private var map: MapSnapshotController? = null
     private var started = false
 
     fun start() {
@@ -30,20 +31,24 @@ class LiveDataController(context: Context) {
             },
         ).also { it.start() }
 
-        location = LocationWatcher(app) { speed, active ->
-            LiveDataStore.setSpeed(speed, active)
+        location = LocationWatcher(app) { speed, active, latitude, longitude, bearing, accuracy ->
+            LiveDataStore.setLocationFix(speed, active, latitude, longitude, bearing, accuracy)
             LiveDataStore.setLocation(
                 app.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
                     PackageManager.PERMISSION_GRANTED,
             )
         }.also { it.start() }
+
+        map = MapSnapshotController(app).also { it.start() }
     }
 
     fun stop() {
         if (!started) return
         started = false
+        map?.stop()
         media?.stop()
         location?.stop()
+        map = null
         media = null
         location = null
     }

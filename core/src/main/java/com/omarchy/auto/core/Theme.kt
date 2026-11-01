@@ -7,6 +7,7 @@ package com.omarchy.auto.core
 data class OmarchyTheme(
     val id: String,
     val name: String,
+    val shortName: String,
     val background: Int,
     val surface: Int,
     val surfaceAlt: Int,
@@ -24,6 +25,7 @@ object Themes {
         OmarchyTheme(
             id = "tokyo-night",
             name = "TOKYO NIGHT",
+            shortName = "TOKYO",
             background = 0xFF1A1B26.toInt(),
             surface = 0xFF16161E.toInt(),
             surfaceAlt = 0xFF1F2335.toInt(),
@@ -38,6 +40,7 @@ object Themes {
         OmarchyTheme(
             id = "osaka-jade",
             name = "OSAKA JADE",
+            shortName = "OSAKA",
             background = 0xFF111C18.toInt(),
             surface = 0xFF0D1512.toInt(),
             surfaceAlt = 0xFF17251F.toInt(),
@@ -52,6 +55,7 @@ object Themes {
         OmarchyTheme(
             id = "gruvbox",
             name = "GRUVBOX",
+            shortName = "GRUVBOX",
             background = 0xFF1D2021.toInt(),
             surface = 0xFF161819.toInt(),
             surfaceAlt = 0xFF282828.toInt(),
@@ -66,6 +70,7 @@ object Themes {
         OmarchyTheme(
             id = "catppuccin-mocha",
             name = "CATPPUCCIN",
+            shortName = "MOCHA",
             background = 0xFF1E1E2E.toInt(),
             surface = 0xFF181825.toInt(),
             surfaceAlt = 0xFF313244.toInt(),

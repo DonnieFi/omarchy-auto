@@ -131,14 +131,21 @@ class OmarchyNotificationListener : NotificationListenerService() {
         }
 
         fun dismissDisplayed(context: Context) {
-            val service = instance ?: return
+            val service = instance
             for (item in LiveDataStore.state.notifications) {
                 try {
-                    service.cancelNotification(item.key)
+                    service?.cancelNotification(item.key)
                 } catch (_: Exception) {
                     // A notification may have been removed already.
                 }
                 LiveDataStore.removeNotification(item.key)
+            }
+            if (service == null) {
+                try {
+                    requestRebind(component(context))
+                } catch (_: Exception) {
+                    // The listener is not available; the local list is still cleared.
+                }
             }
         }
     }

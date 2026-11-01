@@ -9,6 +9,13 @@ You are taking over the existing Omarchy Auto Android project. Do not rewrite th
 - **Phone:** Samsung SM-S721W, Android 17, currently reachable over wireless ADB. Check `adb devices -l`; the endpoint may change.
 - **Android Auto version on phone:** 17.9.664054-release as last checked.
 
+> **Current private build (2026-11-01):** versionCode 4 / 0.1.3, signed AAB at
+> `release/omarchy-auto-0.1.3-aa-release.aab` (SHA-256
+> `5a2fe0fd6bdbe4dc62d358ca4f1d8b95e05ddc3f8c8fec603a225d91d721f0cb`).
+> 0.1.1 was already installed through Internal App Sharing and verified on the
+> owner's Kia; upload this 0.1.3 AAB to update it. The debug-APK steps below are
+> retained as fallback history.
+
 ## Current app state
 
 - Two APKs: `auto` (`com.omarchy.auto`) and `launcher` (`com.omarchy.auto.launcher`).

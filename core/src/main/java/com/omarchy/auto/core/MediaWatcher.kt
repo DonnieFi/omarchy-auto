@@ -28,6 +28,7 @@ class MediaWatcher(
     private var controller: MediaController? = null
     private var started = false
     private var wanted = false
+    private val labelCache = mutableMapOf<String, String>()
 
     private val sessionsListener =
         MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
@@ -184,19 +185,21 @@ class MediaWatcher(
         )
     }
 
-    private fun appLabel(pkg: String): String = try {
-        val pm = app.packageManager
-        val info = if (android.os.Build.VERSION.SDK_INT >= 33) {
-            pm.getApplicationInfo(
-                pkg,
-                android.content.pm.PackageManager.ApplicationInfoFlags.of(0L),
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            pm.getApplicationInfo(pkg, 0)
+    private fun appLabel(pkg: String): String = labelCache.getOrPut(pkg) {
+        try {
+            val pm = app.packageManager
+            val info = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                pm.getApplicationInfo(
+                    pkg,
+                    android.content.pm.PackageManager.ApplicationInfoFlags.of(0L),
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getApplicationInfo(pkg, 0)
+            }
+            pm.getApplicationLabel(info).toString()
+        } catch (_: Exception) {
+            pkg.substringAfterLast('.')
         }
-        pm.getApplicationLabel(info).toString()
-    } catch (_: Exception) {
-        pkg.substringAfterLast('.')
     }
 }

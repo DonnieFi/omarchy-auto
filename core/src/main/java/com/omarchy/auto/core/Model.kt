@@ -37,5 +37,10 @@ data class DashboardState(
     val speedKph: Float? = null,
     val gpsActive: Boolean = false,
     val locationAccess: Boolean = false,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val bearing: Float = 0f,
+    val accuracyM: Float? = null,
+    val mapRevision: Int = 0,
     val vehicleMock: Boolean = true,
 )

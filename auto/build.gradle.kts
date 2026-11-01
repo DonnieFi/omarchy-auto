@@ -13,6 +13,12 @@ val keystoreProps = Properties().apply {
     if (keystorePropsFile?.isFile == true) keystorePropsFile.inputStream().use { load(it) }
 }
 
+// Private/local wallpaper opt-in. Clean and public builds exclude local-assets
+// unless the private release is explicitly built with
+// -Pomarchy.includeLocalAssets=true.
+val includeLocalAssets = (findProperty("omarchy.includeLocalAssets") as String?)
+    ?.toBooleanStrictOrNull() ?: false
+
 android {
     namespace = "com.omarchy.auto"
     compileSdk = 37
@@ -21,8 +27,8 @@ android {
         applicationId = "com.omarchy.auto"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 4
+        versionName = "0.1.3"
     }
 
     if (keystoreProps.getProperty("storeFile") != null) {
@@ -37,8 +43,10 @@ android {
         buildTypes.getByName("release").signingConfig = signingConfigs.getByName("release")
     }
 
-    sourceSets["debug"].assets.srcDir(rootProject.file("local-assets"))
-    sourceSets["release"].assets.srcDir(rootProject.file("local-assets"))
+    if (includeLocalAssets) {
+        sourceSets["debug"].assets.srcDir(rootProject.file("local-assets"))
+        sourceSets["release"].assets.srcDir(rootProject.file("local-assets"))
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

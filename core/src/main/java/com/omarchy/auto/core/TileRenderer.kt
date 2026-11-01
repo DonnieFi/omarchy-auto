@@ -435,15 +435,23 @@ class TileRenderer {
             )
         }
 
+        val pad = minOf(10f * unit, rect.width() * 0.08f)
+        val numberSize = rect.height() * 0.16f
+        val titleSize = rect.height() * 0.21f
+        val metaSize = rect.height() * 0.13f
+        val numberBaseline = rect.top + rect.height() * 0.27f
+        val titleBaseline = rect.top + rect.height() * 0.58f
+        val metaBaseline = rect.bottom - rect.height() * 0.16f
+
         val number = "[${id.number}]"
         text(
-            canvas, number, rect.left + 10f * unit, rect.top + 17f * unit,
-            10f * unit, if (isSelected) theme.accent else theme.dim, bold = true,
+            canvas, number, rect.left + pad, numberBaseline,
+            numberSize, if (isSelected) theme.accent else theme.dim, bold = true,
         )
         text(
-            canvas, id.title, rect.left + 10f * unit, rect.top + 38f * unit,
-            12f * unit, if (isSelected) theme.foreground else theme.dim, bold = true,
-            maxWidth = rect.width() - 18f * unit,
+            canvas, id.title, rect.left + pad, titleBaseline,
+            titleSize, if (isSelected) theme.foreground else theme.dim, bold = true,
+            maxWidth = rect.width() - pad * 2f,
         )
 
         val meta = when (id) {
@@ -461,8 +469,8 @@ class TileRenderer {
             TileId.HOME -> theme.dim
         }
         text(
-            canvas, meta, rect.left + 10f * unit, rect.bottom - 10f * unit,
-            8f * unit, metaColor, maxWidth = rect.width() - 18f * unit,
+            canvas, meta, rect.left + pad, metaBaseline,
+            metaSize, metaColor, maxWidth = rect.width() - pad * 2f,
         )
     }
 
@@ -533,7 +541,7 @@ class TileRenderer {
 
         val content = RectF(
             stage.left + 16f * stageChrome,
-            stage.top + 34f * stageChrome,
+            stage.top + 44f * stageChrome,
             stage.right - 16f * stageChrome,
             stage.bottom - 14f * stageChrome,
         )
@@ -599,7 +607,7 @@ class TileRenderer {
             val label = "REFRESH"
             val textSize = 9f * stageChrome
             val buttonWidth = measure(label, textSize, bold = true) + 24f * stageChrome
-            val buttonHeight = 22f * stageChrome
+            val buttonHeight = 28f * stageChrome
             val right = open?.left?.minus(8f * stageChrome) ?: (stage.right - 16f * stageChrome)
             refresh = RectF(
                 right - buttonWidth,
@@ -733,15 +741,27 @@ class TileRenderer {
         status(canvas, x + 16f * textUnit, baseline, "GPS", state.locationAccess, theme, textUnit)
 
         val mock = if (state.vehicleMock) "MOCK VEHICLE" else "OBD LIVE"
+        val mockSize = 9f * textUnit
         text(
-            canvas, mock, area.centerX() - measure(mock, 9f * textUnit) / 2f, baseline,
-            9f * textUnit, if (state.vehicleMock) theme.yellow else theme.green,
+            canvas, mock, area.right - 16f * textUnit - measure(mock, mockSize),
+            baseline, mockSize, if (state.vehicleMock) theme.yellow else theme.green,
         )
-        val modeLabel = if (mode == Mode.CAR) "AA HOST" else "PHONE"
-        val right = "$modeLabel  ·  ${Themes.at(themeIndex).name}"
+
+        val media = state.media
+        val center = when {
+            media != null && media.title.isNotBlank() -> {
+                val artist = media.artist.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
+                "▶ ${media.title}$artist"
+            }
+            state.speedKph != null -> "%.0f km/h".format(Locale.US, state.speedKph)
+            else -> "OMARCHY AUTO"
+        }
+        val centerSize = 9f * textUnit
+        val maxCenter = area.width() * 0.36f
+        val centerWidth = minOf(measure(center, centerSize), maxCenter)
         text(
-            canvas, right, area.right - 16f * textUnit - measure(right, 9f * textUnit),
-            baseline, 9f * textUnit, theme.accent,
+            canvas, center, area.centerX() - centerWidth / 2f, baseline,
+            centerSize, theme.foreground, maxWidth = maxCenter,
         )
     }
 
@@ -761,75 +781,6 @@ class TileRenderer {
         return x + width + 9f * unit
     }
 
-    private fun drawTile(
-        canvas: Canvas,
-        rect: RectF,
-        id: TileId,
-        theme: OmarchyTheme,
-        state: DashboardState,
-        unit: Float,
-        mode: Mode,
-    ) {
-        fill.style = Paint.Style.FILL
-        fill.color = theme.surface
-        canvas.drawRoundRect(rect, 2f * unit, 2f * unit, fill)
-
-        val borderColor = if (id == TileId.DRIVE) theme.accent else theme.border
-        stroke.style = Paint.Style.STROKE
-        stroke.strokeWidth = 2f * unit
-        stroke.color = borderColor
-        canvas.drawRoundRect(
-            RectF(rect.left + 1f * unit, rect.top + 1f * unit, rect.right - 1f * unit, rect.bottom - 1f * unit),
-            2f * unit, 2f * unit, stroke,
-        )
-
-        val legend = "[${id.number} · ${id.title}]"
-        val legendSize = 10.5f * unit
-        val legendWidth = measure(legend, legendSize, bold = true) + 18f * unit
-        fill.color = theme.background
-        canvas.drawRect(rect.left + 12f * unit, rect.top - 1f * unit, rect.left + 12f * unit + legendWidth, rect.top + 19f * unit, fill)
-        text(
-            canvas, legend, rect.left + 20f * unit, rect.top + 13f * unit, legendSize,
-            if (id == TileId.DRIVE) theme.accent else theme.dim, bold = true,
-        )
-
-        val meta = when (id) {
-            TileId.DRIVE -> if (state.gpsActive) "GPS LIVE" else "GPS WAIT"
-            TileId.MEDIA -> if (state.media != null) "LIVE" else "WAIT"
-            TileId.COMMS -> "${state.notifications.size} NEW"
-            TileId.VEHICLE -> if (state.vehicleMock) "MOCK" else "LIVE"
-            TileId.HOME -> "THEME"
-        }
-        val metaColor = when (id) {
-            TileId.DRIVE -> if (state.gpsActive) theme.green else theme.dim
-            TileId.MEDIA -> if (state.media != null) theme.green else theme.dim
-            TileId.COMMS -> if (state.notifications.isNotEmpty()) theme.accent else theme.dim
-            TileId.VEHICLE -> if (state.vehicleMock) theme.yellow else theme.green
-            TileId.HOME -> theme.dim
-        }
-        text(
-            canvas, meta, rect.right - 12f * unit - measure(meta, 9f * unit),
-            rect.top + 13f * unit, 9f * unit, metaColor,
-        )
-
-        val content = RectF(
-            rect.left + 12f * unit,
-            rect.top + 27f * unit,
-            rect.right - 12f * unit,
-            rect.bottom - 10f * unit,
-        )
-        canvas.save()
-        canvas.clipRect(content)
-        when (id) {
-            TileId.DRIVE -> drawDrive(canvas, content, theme, state, unit)
-            TileId.MEDIA -> drawMedia(canvas, content, theme, state, unit)
-            TileId.COMMS -> drawComms(canvas, content, theme, state, unit)
-            TileId.VEHICLE -> drawVehicle(canvas, content, theme, state, unit)
-            TileId.HOME -> Unit
-        }
-        canvas.restore()
-    }
-
     private fun drawDrive(
         canvas: Canvas,
         content: RectF,
@@ -837,87 +788,120 @@ class TileRenderer {
         state: DashboardState,
         unit: Float,
     ) {
-        fill.style = Paint.Style.FILL
-        fill.color = withAlpha(theme.surfaceAlt, 118)
-        canvas.drawRect(content, fill)
+        val map = MapSnapshotStore.bitmap
+        if (map != null) {
+            drawCenterCrop(canvas, map, content)
+            fill.style = Paint.Style.FILL
+            fill.color = Color.argb(38, Color.red(theme.background), Color.green(theme.background), Color.blue(theme.background))
+            canvas.drawRect(content, fill)
+        } else {
+            fill.style = Paint.Style.FILL
+            fill.color = withAlpha(theme.surfaceAlt, 118)
+            canvas.drawRect(content, fill)
 
-        fill.color = Color.argb(12, 255, 255, 255)
-        val step = 34f * unit
-        var x = content.left
-        while (x < content.right) {
-            canvas.drawRect(x, content.top, x + 1f, content.bottom, fill)
-            x += step
+            fill.color = Color.argb(12, 255, 255, 255)
+            val step = 34f * unit
+            var x = content.left
+            while (x < content.right) {
+                canvas.drawRect(x, content.top, x + 1f, content.bottom, fill)
+                x += step
+            }
+            var y = content.top
+            while (y < content.bottom) {
+                canvas.drawRect(content.left, y, content.right, y + 1f, fill)
+                y += step
+            }
+
+            val message = when {
+                !state.gpsActive -> "WAIT FOR GPS"
+                MapSnapshotStore.error != null -> "MAP OFFLINE"
+                else -> "MAP LOADING"
+            }
+            text(
+                canvas,
+                message,
+                content.centerX() - measure(message, 16f * unit, bold = true) / 2f,
+                content.centerY() + 5f * unit,
+                16f * unit,
+                if (message == "MAP OFFLINE") theme.yellow else theme.dim,
+                bold = true,
+            )
         }
-        var y = content.top
-        while (y < content.bottom) {
-            canvas.drawRect(content.left, y, content.right, y + 1f, fill)
-            y += step
+
+        if (state.gpsActive && map != null) {
+            val cx = content.centerX()
+            val cy = content.centerY()
+            fill.color = Color.argb(90, 0, 0, 0)
+            canvas.drawCircle(cx, cy, 19f * unit, fill)
+            fill.color = theme.green
+            canvas.drawCircle(cx, cy, 11f * unit, fill)
+            stroke.style = Paint.Style.STROKE
+            stroke.strokeWidth = 2f * unit
+            stroke.color = theme.foreground
+            canvas.drawCircle(cx, cy, 11f * unit, stroke)
+            val heading = Path().apply {
+                moveTo(cx, cy - 19f * unit)
+                lineTo(cx - 5f * unit, cy - 10f * unit)
+                lineTo(cx + 5f * unit, cy - 10f * unit)
+                close()
+            }
+            fill.color = theme.foreground
+            canvas.drawPath(heading, fill)
         }
 
-        fill.color = Color.argb(10, 255, 255, 255)
-        canvas.drawRect(
-            content.left + content.width() * 0.12f,
-            content.top + content.height() * 0.16f,
-            content.left + content.width() * 0.38f,
-            content.top + content.height() * 0.34f,
-            fill,
+        val panel = RectF(
+            content.left + 12f * unit,
+            content.bottom - 102f * unit,
+            content.left + 300f * unit,
+            content.bottom - 12f * unit,
         )
-        canvas.drawRect(
-            content.left + content.width() * 0.56f,
-            content.top + content.height() * 0.10f,
-            content.left + content.width() * 0.82f,
-            content.top + content.height() * 0.26f,
-            fill,
-        )
-
-        route.reset()
-        route.moveTo(content.left + content.width() * 0.14f, content.top + content.height() * 0.66f)
-        route.lineTo(content.left + content.width() * 0.30f, content.top + content.height() * 0.50f)
-        route.lineTo(content.left + content.width() * 0.46f, content.top + content.height() * 0.56f)
-        route.lineTo(content.left + content.width() * 0.60f, content.top + content.height() * 0.36f)
-        route.lineTo(content.left + content.width() * 0.84f, content.top + content.height() * 0.22f)
+        fill.color = withAlpha(theme.background, 205)
+        canvas.drawRoundRect(panel, 3f * unit, 3f * unit, fill)
         stroke.style = Paint.Style.STROKE
-        stroke.strokeWidth = 3f * unit
-        stroke.strokeCap = Paint.Cap.ROUND
-        stroke.strokeJoin = Paint.Join.ROUND
-        stroke.color = theme.accent
-        canvas.drawPath(route, stroke)
+        stroke.strokeWidth = 1f * unit
+        stroke.color = theme.border
+        canvas.drawRoundRect(panel, 3f * unit, 3f * unit, stroke)
 
-        val startX = content.left + content.width() * 0.14f
-        val startY = content.top + content.height() * 0.66f
-        fill.color = theme.green
-        canvas.drawCircle(startX, startY, 5f * unit, fill)
-        stroke.strokeWidth = 2f * unit
-        stroke.color = Color.argb(90, 158, 206, 106)
-        canvas.drawCircle(startX, startY, 12f * unit, stroke)
-
-        val endX = content.left + content.width() * 0.84f
-        val endY = content.top + content.height() * 0.22f
-        stroke.strokeWidth = 2f * unit
-        stroke.color = theme.yellow
-        canvas.drawCircle(endX, endY, 8f * unit, stroke)
-
-        text(canvas, "DEMO MAP", content.left + 8f * unit, content.top + 14f * unit, 9f * unit, theme.dim)
         val speed = state.speedKph
         val speedText = if (speed != null) "%.0f".format(Locale.US, speed) else "--"
-        val speedX = content.left + 10f * unit
-        val speedBaseline = content.bottom - 28f * unit
-        text(canvas, speedText, speedX, speedBaseline, 58f * unit, theme.foreground, bold = true)
+        val speedX = panel.left + 14f * unit
+        val speedBaseline = panel.bottom - 34f * unit
+        text(canvas, speedText, speedX, speedBaseline, 54f * unit, theme.foreground, bold = true)
         text(
-            canvas, "km/h", speedX + measure(speedText, 58f * unit, bold = true) + 8f * unit,
-            speedBaseline, 11f * unit, theme.dim,
+            canvas, "km/h", speedX + measure(speedText, 54f * unit, bold = true) + 8f * unit,
+            speedBaseline, 10f * unit, theme.dim,
         )
         val gps = if (state.gpsActive) "GPS LIVE" else "GPS WAIT"
         text(
-            canvas, gps, content.left + 10f * unit, speedBaseline + 20f * unit, 10f * unit,
+            canvas, gps, panel.left + 14f * unit, panel.bottom - 12f * unit, 9f * unit,
             if (state.gpsActive) theme.green else theme.dim,
         )
 
-        val eta = "DEMO ROUTE"
+        val attribution = "© OpenStreetMap contributors · OpenFreeMap"
         text(
-            canvas, eta, content.right - 10f * unit - measure(eta, 9f * unit),
-            content.bottom - 12f * unit, 9f * unit, theme.dim,
+            canvas,
+            attribution,
+            content.right - 8f * unit - measure(attribution, 8f * unit),
+            content.bottom - 8f * unit,
+            8f * unit,
+            theme.dim,
         )
+    }
+
+    private fun drawCenterCrop(canvas: Canvas, bitmap: Bitmap, content: RectF) {
+        val bitmapAspect = bitmap.width.toFloat() / bitmap.height
+        val contentAspect = content.width() / content.height()
+        val src = Rect(0, 0, bitmap.width, bitmap.height)
+        if (bitmapAspect > contentAspect) {
+            val cropWidth = (bitmap.height * contentAspect).toInt()
+            src.left = (bitmap.width - cropWidth) / 2
+            src.right = src.left + cropWidth
+        } else {
+            val cropHeight = (bitmap.width / contentAspect).toInt()
+            src.top = (bitmap.height - cropHeight) / 2
+            src.bottom = src.top + cropHeight
+        }
+        canvas.drawBitmap(bitmap, src, content, wallpaperPaint)
     }
 
     private fun drawMedia(
@@ -1138,7 +1122,7 @@ class TileRenderer {
             return CommsHit(clear = null, notifications = emptyList())
         }
 
-        val headerH = 30f * unit
+        val headerH = 34f * unit
         val count = "${state.notifications.size} NEW"
         text(
             canvas,
@@ -1152,7 +1136,7 @@ class TileRenderer {
         val clearLabel = "CLEAR"
         val clearTextSize = 9f * unit
         val clearWidth = measure(clearLabel, clearTextSize, bold = true) + 20f * unit
-        val clearHeight = 24f * unit
+        val clearHeight = 28f * unit
         val clear = RectF(
             content.right - clearWidth,
             content.top + 2f * unit,
@@ -1164,6 +1148,9 @@ class TileRenderer {
         canvas.drawRect(content.left, content.top + headerH - 1f, content.right, content.top + headerH, fill)
 
         val listTop = content.top + headerH
+        fill.style = Paint.Style.FILL
+        fill.color = withAlpha(theme.background, 175)
+        canvas.drawRect(content.left, listTop, content.right, content.bottom, fill)
         val listHeight = content.bottom - listTop
         val maxItems = if (listHeight > 4f * 54f * unit) 4 else 3
         val items = state.notifications.take(maxItems)
@@ -1366,9 +1353,8 @@ class TileRenderer {
         text(canvas, clockFormat.format(Date()), content.left, content.top + 34f * unit, 34f * unit, theme.foreground, bold = true)
         text(canvas, dateFormat.format(Date()).uppercase(Locale.US), content.left, content.top + 52f * unit, 9f * unit, theme.dim)
         text(canvas, "OMARCHY AUTO", content.left, content.top + 74f * unit, 9f * unit, theme.accent)
-        text(canvas, "THEME", content.left, content.bottom - 52f * unit, 9f * unit, theme.dim)
-
-        val chipTop = content.bottom - 46f * unit
+        val chipTop = content.bottom - 56f * unit
+        text(canvas, "THEME", content.left, chipTop - 10f * unit, 9f * unit, theme.dim)
         val gap = 4f * unit
         val chipWidth = (content.width() - gap * (Themes.all.size - 1)) / Themes.all.size
         Themes.all.forEachIndexed { index, item ->
@@ -1386,7 +1372,7 @@ class TileRenderer {
             stroke.strokeWidth = 1f * unit
             stroke.color = if (index == themeIndex) theme.accent else theme.border
             canvas.drawRect(chip, stroke)
-            val label = item.name.take(5)
+            val label = item.shortName
             text(
                 canvas, label, chip.centerX() - measure(label, 7f * unit) / 2f,
                 chip.centerY() + 3f * unit, 7f * unit,
@@ -1395,14 +1381,14 @@ class TileRenderer {
         }
 
         if (mode == Mode.PHONE) {
-            val setup = RectF(content.left, content.bottom - 16f * unit, content.right, content.bottom - 2f * unit)
+            val setup = RectF(content.left, content.bottom - 28f * unit, content.right, content.bottom - 2f * unit)
             stroke.style = Paint.Style.STROKE
             stroke.strokeWidth = 1f * unit
             stroke.color = theme.border
             canvas.drawRect(setup, stroke)
             text(
-                canvas, "SETUP · PERMISSIONS", setup.centerX() - measure("SETUP · PERMISSIONS", 8f * unit) / 2f,
-                setup.centerY() + 3f * unit, 8f * unit, theme.dim,
+                canvas, "SETUP · PERMISSIONS", setup.centerX() - measure("SETUP · PERMISSIONS", 9f * unit) / 2f,
+                setup.centerY() + 3f * unit, 9f * unit, theme.dim,
             )
             canvas.restore()
             return setup

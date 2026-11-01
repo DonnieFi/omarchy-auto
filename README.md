@@ -29,8 +29,9 @@ Built and checked on this machine:
 - The layout is now a **narrow right-side rail of small tiles** plus one large
   content stage. Tap a rail tile to engage it. Media has an in-app play/pause
   control; the stage `OPEN` button launches the real app.
-- Android Auto APK compiles with the Car App Library navigation template and
-  surface callback. **It has not been shown on a real Android Auto car screen.**
+- Android Auto 0.1.1 was verified on the owner's real Kia Android Auto screen
+  over USB using Play Internal App Sharing. The 0.1.3 real-map/sizing build is
+  pending a car pass; the phone launcher has been used for map and layout checks.
 - The Desktop Head Unit was attempted, but the emulator image's Android Auto
   app is a Play Store stub and the image has no Play Store.
 
@@ -52,7 +53,14 @@ export ANDROID_HOME=/path/to/android-sdk
 ./gradlew assembleDebug
 ```
 
-APKs:
+For the private local-wallpaper demo only, opt in explicitly:
+
+```sh
+./gradlew assembleDebug -Pomarchy.includeLocalAssets=true
+```
+
+Default builds exclude `local-assets/`; use the private flag only for the
+owner's local APK/AAB. APKs:
 
 ```text
 auto/build/outputs/apk/debug/auto-debug.apk
@@ -91,7 +99,7 @@ tile again to minimize. The stage has an `OPEN` action for real apps:
 
 | Rail tile | Stage | OPEN action |
 |---|---|---|
-| Drive | large demo map/GPS speed | Google Maps |
+| Drive | real MapLibre/OpenFreeMap map + live GPS; no turn-by-turn | Google Maps |
 | Media | large now-playing/audio art + play/pause | Spotify, then YouTube Music |
 | Comms | large notification list | default SMS app |
 | Vehicle | large mock vehicle panel | none — Torque deferred |
@@ -103,11 +111,12 @@ button cycles Tokyo Night, Osaka Jade, Gruvbox, and Catppuccin.
 ### Roadster background
 
 The app looks for `wallpaper.jpg` (then legacy `roadster.jpg`) in its files
-directory or the debug-only `local-assets/` directory. That file is **not committed**: the upstream Tokyo
-Roadster theme's CREDITS says the media redistribution rights were not
-established. A local copy makes the car/road wallpaper prominent; a clean clone
-falls back to an original neon-road background. See
-[`docs/ASSETS.md`](docs/ASSETS.md).
+directory. The private local build can additionally bundle
+`local-assets/wallpaper.jpg` with
+`-Pomarchy.includeLocalAssets=true`. That file is **not committed**: the upstream
+Tokyo Roadster theme's CREDITS says the media redistribution rights were not
+established. Default and public builds exclude it and fall back to an original
+neon-road background. See [`docs/ASSETS.md`](docs/ASSETS.md).
 
 ### Permissions
 
@@ -160,8 +169,9 @@ top-bar `THEME` button for hosts that forward surface clicks.
 > sideloaded navigation apps disappearing from the AA launcher. Internal App
 > Sharing / an Internal Test Track is the documented private test route. The
 > debug build uses `HostValidator.ALLOW_ALL_HOSTS_VALIDATOR`; the release build
-> now allows the official AA host certificates. Do not claim the car path works
-> until it has been seen on a real host.
+> now allows the official AA host certificates. The car path has been seen on
+> the owner's Kia with 0.1.1; use Internal App Sharing for each new build and
+> verify the new surface changes on the car.
 
 ## Architecture
 
@@ -204,8 +214,10 @@ that future path.
 | Vehicle | Mock, visible `MOCK` label; no Torque launch |
 | Right rail + large stage | Verified on emulator and phone |
 | Rotation | Portrait/landscape reflow verified on the S24 FE |
-| Media play/pause | Wired to MediaTransport; live session not re-verified end-to-end |
-| AA NavigationTemplate + SurfaceCallback | Compiles; real host unverified |
+| Media play/pause/previous/next | Wired to MediaTransport; car pass pending |
+| AA NavigationTemplate + SurfaceCallback | Verified on real AA (0.1.1); 0.1.3 map/sizing pending |
+| Real map | OpenFreeMap dark style via MapLibre snapshots + live location puck; phone verified, car pending |
+| Notification detail | Full-screen card overlay; phone preview verified |
 | Phone stage OPEN + Back | Verified with YouTube Music/Maps path |
 | 1280×720 screenshot | `docs/img/launcher-1280x720.png` (fallback background) |
 
@@ -221,16 +233,21 @@ that future path.
   plus existing notifications after listener reconnect.
 - Tile-to-YouTube-Music and Back-to-launcher verified.
 - GPS provider returned a fix; speed read zero while stationary.
-- Android Auto host: **not verified**. The DHU was installed and runnable, but
-  the emulator's AA package is a stub that tries to open a missing Play Store.
+- Android Auto host: 0.1.1 verified on the owner's real Kia screen. The 0.1.3
+  real-map and larger-type build still needs the same car pass.
+- Real map: MapLibre snapshot of `https://tiles.openfreemap.org/styles/dark`
+  with a live location puck and OpenStreetMap/OpenFreeMap attribution. No
+  routing or turn-by-turn.
 
 ## Limitations
 
-- A real AA car screen over USB remains the outstanding acceptance test.
-- Sideloaded Car App Library availability is subject to Google's host policy.
-- The AA app's action-strip theme button and surface hit testing are untested on
-  a real host.
-- Media control buttons are visual only; playback control commands are not sent.
+- The 0.1.3 real-map and larger-type build still needs a real-car acceptance
+  pass. 0.1.1 was verified there.
+- Sideloaded Car App Library availability is subject to Google's host policy;
+  use Play Internal App Sharing for the trusted install.
+- The AA action strip was visible in the 0.1.1 car test; 0.1.3 surface hit
+  testing still needs confirmation.
+- Media controls send play/pause, previous, and next through MediaController.
 - Notifications are not yet allow-listed; OTP/2FA filtering is future work.
 - Vehicle data is mock until OBD-II; Torque is not wired up.
 - The exact Roadster wallpaper is local-only; the repo ships only the original

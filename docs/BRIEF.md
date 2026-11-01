@@ -157,8 +157,8 @@ useful history.
 - [x] `./gradlew assembleDebug` builds signed debug APKs.
 - [x] Phone launcher runs, theme switch works, live MediaSession and
       notifications work, GPS fix obtained, tile launch/back works.
-- [ ] Real Android Auto car screen over USB.
-- [ ] Real AA theme switch + live Media tile on the car screen.
+- [x] Real Android Auto car screen over USB (0.1.1, owner's Kia, 2026-11-01).
+- [x] Real AA Media/comms surface seen in the car video; 0.1.3 real-map/sizing pass is the remaining check.
 - [x] 1280×720 capture in `docs/img/` (phone launcher, fallback background, clearly labeled).
 - [x] Vehicle mock visibly labeled.
 

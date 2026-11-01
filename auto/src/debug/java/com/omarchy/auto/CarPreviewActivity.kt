@@ -54,6 +54,9 @@ class CarPreviewActivity : Activity() {
             render(wallpaper, state, output, "car-$name.png", tile, overlayKey = null)
         }
         render(wallpaper, state, output, "car-comms-overlay.png", TileId.COMMS, overlayKey = "2")
+        for ((name, tile) in listOf("comms" to TileId.COMMS, "home" to TileId.HOME, "media" to TileId.MEDIA)) {
+            render(wallpaper, state, output, "car-800-$name.png", tile, overlayKey = null, width = 800, height = 480)
+        }
     }
 
     private fun render(
@@ -63,16 +66,18 @@ class CarPreviewActivity : Activity() {
         name: String,
         tile: TileId?,
         overlayKey: String?,
+        width: Int = WIDTH,
+        height: Int = HEIGHT,
     ) {
-        val bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val renderer = TileRenderer().apply { setBackground(wallpaper) }
         if (tile != null) renderer.toggle(tile)
         if (overlayKey != null) renderer.openNotification(overlayKey)
         renderer.draw(
             canvas = canvas,
-            width = WIDTH,
-            height = HEIGHT,
+            width = width,
+            height = height,
             state = state,
             themeIndex = 0,
             mode = TileRenderer.Mode.CAR,
