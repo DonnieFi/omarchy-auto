@@ -15,6 +15,14 @@ object BackgroundStore {
     private const val PREFS = "omarchy_background"
     private const val KEY_PATH = "custom_path"
     private const val KEY_ENABLED = "custom_enabled"
+    private const val KEY_SKIP_LOCAL = "skip_local_overrides"
+
+    val BUNDLED_WALLPAPER_NAMES = listOf(
+        "wallpaper.jpg",
+        "wallpaper.png",
+        "roadster.jpg",
+        "roadster.png",
+    )
 
     private var prefs: SharedPreferences? = null
 
@@ -30,6 +38,15 @@ object BackgroundStore {
     var enabled: Boolean = false
         private set
 
+    /**
+     * Set when the user explicitly asks for theme backgrounds. It suppresses
+     * legacy local files and the private bundled wallpaper so the bundled
+     * Omarchy theme image can win.
+     */
+    @Volatile
+    var skipLocalOverrides: Boolean = false
+        private set
+
     fun init(context: Context) {
         if (prefs != null) return
         prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -37,23 +54,31 @@ object BackgroundStore {
         enabled = prefs?.getBoolean(KEY_ENABLED, false) == true &&
             path != null && File(path).isFile
         customPath = path.takeIf { enabled }
+        skipLocalOverrides = prefs?.getBoolean(KEY_SKIP_LOCAL, false) == true
         if (!enabled) {
             prefs?.edit()?.putBoolean(KEY_ENABLED, false)?.apply()
         }
     }
 
-    fun hasBundledTom(context: Context): Boolean = try {
-        context.assets.open("wallpaper.jpg").close()
-        true
-    } catch (_: Exception) {
-        false
-    }
+    fun bundledWallpaperName(context: Context): String? =
+        BUNDLED_WALLPAPER_NAMES.firstOrNull { name ->
+            try {
+                context.assets.open(name).close()
+                true
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+    fun hasBundledTom(context: Context): Boolean = bundledWallpaperName(context) != null
 
     fun useBundledTom(context: Context): Boolean {
         val app = context.applicationContext
+        val name = bundledWallpaperName(app) ?: return false
+        val extension = name.substringAfterLast('.', "jpg")
         return try {
-            app.assets.open("wallpaper.jpg").use { input ->
-                writeBackground(app, input, "jpg")
+            app.assets.open(name).use { input ->
+                writeBackground(app, input, extension)
             }?.let { file ->
                 enable(app, file)
                 true
@@ -91,7 +116,11 @@ object BackgroundStore {
         }
         customPath = null
         enabled = false
-        prefs?.edit()?.putBoolean(KEY_ENABLED, false)?.apply()
+        skipLocalOverrides = true
+        prefs?.edit()
+            ?.putBoolean(KEY_ENABLED, false)
+            ?.putBoolean(KEY_SKIP_LOCAL, true)
+            ?.apply()
         revision++
         AppBackground.invalidate()
         LiveDataStore.notifyDisplayChanged()
@@ -100,9 +129,11 @@ object BackgroundStore {
     private fun enable(context: Context, file: File) {
         customPath = file.absolutePath
         enabled = true
+        skipLocalOverrides = false
         prefs?.edit()
             ?.putString(KEY_PATH, file.absolutePath)
             ?.putBoolean(KEY_ENABLED, true)
+            ?.putBoolean(KEY_SKIP_LOCAL, false)
             ?.apply()
         revision++
         AppBackground.invalidate()

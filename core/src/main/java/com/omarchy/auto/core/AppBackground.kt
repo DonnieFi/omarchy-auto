@@ -69,30 +69,33 @@ object AppBackground {
             }
         }
 
-        // Per-theme local override, useful for a licensed image the repo cannot ship.
-        for (extension in listOf("webp", "jpg", "png")) {
-            val file = File(context.filesDir, "themes/$id.$extension")
-            if (file.isFile) {
-                decodeFile(file.absolutePath)?.let { return it }
-            }
-        }
-
-        if (id == "tokyo-night") {
-            // Preserve the owner's existing local Tokyo Studio workflow. This
-            // must override the committed Omarchy background in private builds.
-            for (name in listOf("wallpaper.jpg", "wallpaper.png", "roadster.jpg", "roadster.png")) {
-                val file = context.filesDir.resolve(name)
+        if (!BackgroundStore.skipLocalOverrides) {
+            // Per-theme local override, useful for a licensed image the repo cannot ship.
+            for (extension in listOf("webp", "jpg", "png")) {
+                val file = File(context.filesDir, "themes/$id.$extension")
                 if (file.isFile) {
                     decodeFile(file.absolutePath)?.let { return it }
                 }
             }
-            for (name in listOf("wallpaper.jpg", "wallpaper.png", "roadster.jpg", "roadster.png")) {
-                try {
-                    context.assets.open(name).use { stream ->
-                        decodeStream(stream)?.let { return it }
+
+            if (id == "tokyo-night") {
+                // Preserve the owner's existing local Tokyo Studio workflow. This
+                // must override the committed Omarchy background in private builds,
+                // unless Setup explicitly asked for theme backgrounds.
+                for (name in BackgroundStore.BUNDLED_WALLPAPER_NAMES) {
+                    val file = context.filesDir.resolve(name)
+                    if (file.isFile) {
+                        decodeFile(file.absolutePath)?.let { return it }
                     }
-                } catch (_: Exception) {
-                    // Optional private asset.
+                }
+                for (name in BackgroundStore.BUNDLED_WALLPAPER_NAMES) {
+                    try {
+                        context.assets.open(name).use { stream ->
+                            decodeStream(stream)?.let { return it }
+                        }
+                    } catch (_: Exception) {
+                        // Optional private asset.
+                    }
                 }
             }
         }

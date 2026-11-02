@@ -23,6 +23,8 @@ import android.widget.Toast
  */
 class SetupActivity : Activity() {
     private lateinit var status: TextView
+    private lateinit var notificationButton: Button
+    private lateinit var customBackgroundStatus: TextView
     private var theme = Themes.all.first()
     private var isLauncher = false
 
@@ -105,12 +107,11 @@ class SetupActivity : Activity() {
         }
 
         column.addView(space(12))
-        column.addView(
-            button("NOTIFICATION TEXT · ${DisplaySettings.label()}") {
-                DisplaySettings.cycle()
-                recreate()
-            },
-        )
+        notificationButton = button("NOTIFICATION TEXT · ${DisplaySettings.label()}") {
+            DisplaySettings.cycle()
+            refreshDisplayControls()
+        }
+        column.addView(notificationButton)
 
         column.addView(space(12))
         column.addView(label("BACKGROUND", 12f, theme.dim, letterSpacing = 0.12f))
@@ -126,24 +127,37 @@ class SetupActivity : Activity() {
         if (BackgroundStore.hasBundledTom(this)) {
             column.addView(
                 button("USE TOM BACKGROUND") {
-                    if (BackgroundStore.useBundledTom(this)) recreate()
-                    else Toast.makeText(this, "Tom background is not bundled", Toast.LENGTH_SHORT).show()
+                    val appContext = applicationContext
+                    Thread {
+                        val applied = BackgroundStore.useBundledTom(appContext)
+                        runOnUiThread {
+                            if (isDestroyed) return@runOnUiThread
+                            if (applied) {
+                                refreshDisplayControls()
+                            } else {
+                                Toast.makeText(
+                                    this,
+                                    "Tom background is not bundled",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        }
+                    }.start()
                 },
             )
         }
         column.addView(
             button("USE THEME BACKGROUNDS") {
                 BackgroundStore.clear(this)
-                recreate()
+                refreshDisplayControls()
             },
         )
-        column.addView(
-            label(
-                "CUSTOM BACKGROUND · ${if (BackgroundStore.enabled) "ON" else "OFF"}",
-                12f,
-                if (BackgroundStore.enabled) theme.green else theme.dim,
-            ).apply { setPadding(0, dp(8), 0, dp(12)) },
-        )
+        customBackgroundStatus = label(
+            "CUSTOM BACKGROUND · ${if (BackgroundStore.enabled) "ON" else "OFF"}",
+            12f,
+            if (BackgroundStore.enabled) theme.green else theme.dim,
+        ).apply { setPadding(0, dp(8), 0, dp(12)) }
+        column.addView(customBackgroundStatus)
 
         column.addView(space(16))
         column.addView(label("MAP & LOCATION PRIVACY", 12f, theme.dim, letterSpacing = 0.12f))
@@ -179,11 +193,13 @@ class SetupActivity : Activity() {
             )
         }
         setContentView(scroll)
+        refreshDisplayControls()
     }
 
     override fun onResume() {
         super.onResume()
         refreshStatus()
+        if (::notificationButton.isInitialized) refreshDisplayControls()
     }
 
     override fun onRequestPermissionsResult(
@@ -193,6 +209,15 @@ class SetupActivity : Activity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         refreshStatus()
+    }
+
+    private fun refreshDisplayControls() {
+        notificationButton.text = "NOTIFICATION TEXT · ${DisplaySettings.label()}"
+        customBackgroundStatus.text =
+            "CUSTOM BACKGROUND · ${if (BackgroundStore.enabled) "ON" else "OFF"}"
+        customBackgroundStatus.setTextColor(
+            if (BackgroundStore.enabled) theme.green else theme.dim,
+        )
     }
 
     private fun refreshStatus() {
@@ -261,11 +286,22 @@ class SetupActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != REQUEST_BACKGROUND || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
-        if (BackgroundStore.setCustom(this, uri)) {
-            recreate()
-        } else {
-            Toast.makeText(this, "Could not load that image", Toast.LENGTH_SHORT).show()
-        }
+        val appContext = applicationContext
+        Thread {
+            val applied = BackgroundStore.setCustom(appContext, uri)
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                if (applied) {
+                    refreshDisplayControls()
+                } else {
+                    Toast.makeText(
+                        this,
+                        "Could not load that image",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
+        }.start()
     }
 
     companion object {

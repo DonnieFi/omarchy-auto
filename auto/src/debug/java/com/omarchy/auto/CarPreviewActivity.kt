@@ -47,7 +47,7 @@ class CarPreviewActivity : Activity() {
         val output = getExternalFilesDir("preview") ?: filesDir
         output.mkdirs()
         val wallpaper = AppBackground.load(this, Themes.at(0))
-        val state = previewState()
+        val state = previewState(wallpaper)
         val states = buildList {
             add("idle" to null)
             add("drive" to TileId.DRIVE)
@@ -63,6 +63,16 @@ class CarPreviewActivity : Activity() {
         for ((name, tile) in listOf("comms" to TileId.COMMS, "home" to TileId.HOME, "media" to TileId.MEDIA)) {
             render(wallpaper, state, output, "car-800-$name.png", tile, overlayKey = null, width = 800, height = 480)
         }
+        render(wallpaper, state, output, "car-1280-home.png", TileId.HOME, overlayKey = null, width = 1280, height = 720)
+        render(
+            wallpaper, state, output, "car-1280-everforest.png", TileId.HOME,
+            overlayKey = null, width = 1280, height = 720, themeIndex = 5,
+        )
+        render(wallpaper, state, output, "car-1280-media.png", TileId.MEDIA, overlayKey = null, width = 1280, height = 720)
+        render(
+            wallpaper, state, output, "car-960-everforest.png", TileId.HOME,
+            overlayKey = null, width = 960, height = 540, themeIndex = 5,
+        )
         render(
             wallpaper, state, output, "car-800-everforest.png", TileId.HOME,
             overlayKey = null, width = 800, height = 480, themeIndex = 5,
@@ -75,6 +85,10 @@ class CarPreviewActivity : Activity() {
         render(
             wallpaper, state, output, "car-800-comms-overlay-large.png", TileId.COMMS,
             overlayKey = "2", width = 800, height = 480,
+        )
+        render(
+            wallpaper, state, output, "car-1280-comms-large.png", TileId.COMMS,
+            overlayKey = null, width = 1280, height = 720,
         )
         DisplaySettings.cycle()
         render(
@@ -138,7 +152,7 @@ class CarPreviewActivity : Activity() {
         )
     }
 
-    private fun previewState(): DashboardState {
+    private fun previewState(art: Bitmap?): DashboardState {
         val now = System.currentTimeMillis()
         return DashboardState(
             media = MediaSnapshot(
@@ -149,6 +163,7 @@ class CarPreviewActivity : Activity() {
                 positionMs = 94_000L,
                 durationMs = 236_000L,
                 source = "YouTube Music",
+                art = art,
             ),
             mediaAccess = true,
             notifications = listOf(

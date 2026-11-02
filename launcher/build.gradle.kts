@@ -22,6 +22,7 @@ android {
 
     if (includeLocalAssets) {
         sourceSets["debug"].assets.srcDir(rootProject.file("local-assets"))
+        sourceSets["release"].assets.srcDir(rootProject.file("local-assets"))
     }
 
     compileOptions {

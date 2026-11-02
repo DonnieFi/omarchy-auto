@@ -38,7 +38,8 @@ class CarSurfaceRenderer(
     private val renderer = TileRenderer()
     private val drawLock = ReentrantLock()
     private val released = AtomicBoolean(false)
-    private var backgroundRevision = -1
+    @Volatile
+    private var backgroundKey = ""
 
     @Volatile
     private var stopped = false
@@ -173,8 +174,11 @@ class CarSurfaceRenderer(
         }
     }
 
+    private fun currentBackgroundKey(): String =
+        "${ThemeStore.current().id}:${BackgroundStore.revision}"
+
     private fun refreshBackground() {
-        backgroundRevision = BackgroundStore.revision
+        backgroundKey = currentBackgroundKey()
         AppBackground.loadAsync(appContext, ThemeStore.current()) { bitmap ->
             handler.post {
                 if (!stopped) {
@@ -195,7 +199,7 @@ class CarSurfaceRenderer(
             releaseSurface()
             return
         }
-        if (BackgroundStore.revision != backgroundRevision) {
+        if (backgroundKey != currentBackgroundKey()) {
             refreshBackground()
         }
         drawLock.lock()
