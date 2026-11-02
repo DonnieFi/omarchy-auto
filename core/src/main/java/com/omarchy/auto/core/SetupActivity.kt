@@ -15,6 +15,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 
 /**
  * One-screen setup for permissions. The AA service cannot show a runtime
@@ -28,6 +29,8 @@ class SetupActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ThemeStore.init(this)
+        DisplaySettings.init(this)
+        BackgroundStore.init(this)
         isLauncher = intent.getBooleanExtra(EXTRA_LAUNCHER, false)
         theme = ThemeStore.current()
         window.setBackgroundDrawable(ColorDrawable(theme.background))
@@ -100,6 +103,47 @@ class SetupActivity : Activity() {
                 },
             )
         }
+
+        column.addView(space(12))
+        column.addView(
+            button("NOTIFICATION TEXT · ${DisplaySettings.label()}") {
+                DisplaySettings.cycle()
+                recreate()
+            },
+        )
+
+        column.addView(space(12))
+        column.addView(label("BACKGROUND", 12f, theme.dim, letterSpacing = 0.12f))
+        column.addView(
+            button("CHOOSE BACKGROUND") {
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "image/*"
+                }
+                startActivityForResult(intent, REQUEST_BACKGROUND)
+            },
+        )
+        if (BackgroundStore.hasBundledTom(this)) {
+            column.addView(
+                button("USE TOM BACKGROUND") {
+                    if (BackgroundStore.useBundledTom(this)) recreate()
+                    else Toast.makeText(this, "Tom background is not bundled", Toast.LENGTH_SHORT).show()
+                },
+            )
+        }
+        column.addView(
+            button("USE THEME BACKGROUNDS") {
+                BackgroundStore.clear(this)
+                recreate()
+            },
+        )
+        column.addView(
+            label(
+                "CUSTOM BACKGROUND · ${if (BackgroundStore.enabled) "ON" else "OFF"}",
+                12f,
+                if (BackgroundStore.enabled) theme.green else theme.dim,
+            ).apply { setPadding(0, dp(8), 0, dp(12)) },
+        )
 
         column.addView(space(16))
         column.addView(label("MAP & LOCATION PRIVACY", 12f, theme.dim, letterSpacing = 0.12f))
@@ -213,9 +257,21 @@ class SetupActivity : Activity() {
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_BACKGROUND || resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        if (BackgroundStore.setCustom(this, uri)) {
+            recreate()
+        } else {
+            Toast.makeText(this, "Could not load that image", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     companion object {
         const val EXTRA_LAUNCHER = "launcher_setup"
         private const val REQUEST_LOCATION = 41
         private const val REQUEST_NOTIFICATIONS = 42
+        private const val REQUEST_BACKGROUND = 43
     }
 }

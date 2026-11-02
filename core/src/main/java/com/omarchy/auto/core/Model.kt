@@ -42,5 +42,6 @@ data class DashboardState(
     val bearing: Float = 0f,
     val accuracyM: Float? = null,
     val mapRevision: Int = 0,
+    val displayRevision: Int = 0,
     val vehicleMock: Boolean = true,
 )

@@ -31,14 +31,21 @@ object AppBackground {
     }
     private var generation = 0
 
-    fun load(context: Context, theme: OmarchyTheme): Bitmap? {
-        val id = theme.id
-        if (currentId == id) return bitmap
+    fun invalidate() {
         synchronized(this) {
-            if (currentId == id) return bitmap
-            val next = loadTheme(context, id)
+            currentId = null
+            bitmap = null
+        }
+    }
+
+    fun load(context: Context, theme: OmarchyTheme): Bitmap? {
+        val key = "${theme.id}:${BackgroundStore.revision}"
+        if (currentId == key) return bitmap
+        synchronized(this) {
+            if (currentId == key) return bitmap
+            val next = loadTheme(context, theme.id)
             bitmap = next
-            currentId = id
+            currentId = key
             return next
         }
     }
@@ -55,6 +62,13 @@ object AppBackground {
     }
 
     private fun loadTheme(context: Context, id: String): Bitmap? {
+        // A user-selected background wins over every theme.
+        if (BackgroundStore.enabled) {
+            BackgroundStore.customPath?.let { path ->
+                if (File(path).isFile) decodeFile(path)?.let { return it }
+            }
+        }
+
         // Per-theme local override, useful for a licensed image the repo cannot ship.
         for (extension in listOf("webp", "jpg", "png")) {
             val file = File(context.filesDir, "themes/$id.$extension")

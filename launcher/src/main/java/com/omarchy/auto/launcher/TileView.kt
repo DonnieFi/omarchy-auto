@@ -9,6 +9,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import com.omarchy.auto.core.AppBackground
+import com.omarchy.auto.core.BackgroundStore
 import com.omarchy.auto.core.DashboardState
 import com.omarchy.auto.core.LiveDataStore
 import com.omarchy.auto.core.MediaTransport
@@ -28,6 +29,7 @@ class TileView @JvmOverloads constructor(
     private var downHit: TileRenderer.Hit? = null
     private var downX = 0f
     private var downY = 0f
+    private var lastBackgroundRevision = -1
     private val ticker = object : Runnable {
         override fun run() {
             invalidate()
@@ -36,6 +38,10 @@ class TileView @JvmOverloads constructor(
     }
 
     private val dataListener: (DashboardState) -> Unit = {
+        if (BackgroundStore.revision != lastBackgroundRevision) {
+            lastBackgroundRevision = BackgroundStore.revision
+            refreshBackground()
+        }
         postInvalidateOnAnimation()
     }
 
@@ -46,6 +52,7 @@ class TileView @JvmOverloads constructor(
         isClickable = true
         isFocusable = true
         contentDescription = "Omarchy Auto launcher"
+        BackgroundStore.init(context)
         setBackgroundColor(ThemeStore.current().background)
         refreshBackground()
     }
@@ -182,6 +189,7 @@ class TileView @JvmOverloads constructor(
     }
 
     private fun refreshBackground() {
+        lastBackgroundRevision = BackgroundStore.revision
         AppBackground.loadAsync(context, ThemeStore.current()) { bitmap ->
             renderer.setBackground(bitmap)
             invalidate()

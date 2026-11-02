@@ -11,6 +11,8 @@ import androidx.car.app.CarAppService
 import androidx.car.app.Session
 import androidx.car.app.SessionInfo
 import androidx.car.app.validation.HostValidator
+import com.omarchy.auto.core.BackgroundStore
+import com.omarchy.auto.core.DisplaySettings
 import com.omarchy.auto.core.LiveDataController
 import com.omarchy.auto.core.SetupActivity
 import com.omarchy.auto.core.ThemeStore
@@ -23,6 +25,8 @@ class OmarchyCarAppService : CarAppService() {
     override fun onCreate() {
         super.onCreate()
         ThemeStore.init(this)
+        DisplaySettings.init(this)
+        BackgroundStore.init(this)
         controller = LiveDataController(this).also { it.start() }
         startLiveNotification()
     }

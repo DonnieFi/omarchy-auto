@@ -13,6 +13,8 @@ import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.Toast
+import com.omarchy.auto.core.BackgroundStore
+import com.omarchy.auto.core.DisplaySettings
 import com.omarchy.auto.core.LiveDataController
 import com.omarchy.auto.core.SetupActivity
 import com.omarchy.auto.core.ThemeStore
@@ -25,6 +27,8 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ThemeStore.init(this)
+        DisplaySettings.init(this)
+        BackgroundStore.init(this)
         controller = LiveDataController(this)
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -100,8 +104,8 @@ class MainActivity : Activity() {
                 Intent(Intent.ACTION_VIEW, Uri.parse("sms:")),
             )
 
-            // Vehicle remains a visible mock for now; Torque is intentionally
-            // not wired up.
+            // Vehicle is hidden by FeatureFlags.SHOW_VEHICLE_TILE until the
+            // OBD/Torque source is real.
             TileId.VEHICLE -> Unit
 
             TileId.HOME -> open(

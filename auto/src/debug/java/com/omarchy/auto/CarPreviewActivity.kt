@@ -8,7 +8,10 @@ import android.graphics.Paint
 import android.os.Bundle
 import android.util.Log
 import com.omarchy.auto.core.AppBackground
+import com.omarchy.auto.core.BackgroundStore
 import com.omarchy.auto.core.DashboardState
+import com.omarchy.auto.core.DisplaySettings
+import com.omarchy.auto.core.FeatureFlags
 import com.omarchy.auto.core.MediaSnapshot
 import com.omarchy.auto.core.NotificationItem
 import com.omarchy.auto.core.Themes
@@ -27,6 +30,8 @@ class CarPreviewActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DisplaySettings.init(this)
+        BackgroundStore.init(this)
         Thread {
             try {
                 renderPreviews()
@@ -43,14 +48,14 @@ class CarPreviewActivity : Activity() {
         output.mkdirs()
         val wallpaper = AppBackground.load(this, Themes.at(0))
         val state = previewState()
-        val states = listOf(
-            "idle" to null,
-            "drive" to TileId.DRIVE,
-            "media" to TileId.MEDIA,
-            "comms" to TileId.COMMS,
-            "vehicle" to TileId.VEHICLE,
-            "home" to TileId.HOME,
-        )
+        val states = buildList {
+            add("idle" to null)
+            add("drive" to TileId.DRIVE)
+            add("media" to TileId.MEDIA)
+            add("comms" to TileId.COMMS)
+            if (FeatureFlags.SHOW_VEHICLE_TILE) add("vehicle" to TileId.VEHICLE)
+            add("home" to TileId.HOME)
+        }
         for ((name, tile) in states) {
             render(wallpaper, state, output, "car-$name.png", tile, overlayKey = null)
         }
@@ -58,6 +63,29 @@ class CarPreviewActivity : Activity() {
         for ((name, tile) in listOf("comms" to TileId.COMMS, "home" to TileId.HOME, "media" to TileId.MEDIA)) {
             render(wallpaper, state, output, "car-800-$name.png", tile, overlayKey = null, width = 800, height = 480)
         }
+        render(
+            wallpaper, state, output, "car-800-everforest.png", TileId.HOME,
+            overlayKey = null, width = 800, height = 480, themeIndex = 5,
+        )
+        DisplaySettings.cycle()
+        render(
+            wallpaper, state, output, "car-800-comms-large.png", TileId.COMMS,
+            overlayKey = null, width = 800, height = 480,
+        )
+        render(
+            wallpaper, state, output, "car-800-comms-overlay-large.png", TileId.COMMS,
+            overlayKey = "2", width = 800, height = 480,
+        )
+        DisplaySettings.cycle()
+        render(
+            wallpaper, state, output, "car-800-comms-small.png", TileId.COMMS,
+            overlayKey = null, width = 800, height = 480,
+        )
+        render(
+            wallpaper, state, output, "car-800-comms-overlay-small.png", TileId.COMMS,
+            overlayKey = "2", width = 800, height = 480,
+        )
+        DisplaySettings.cycle() // back to normal for the theme renders
         Themes.all.forEachIndexed { index, theme ->
             val themeWallpaper = AppBackground.load(this, theme)
             render(themeWallpaper, state, output, "theme-${theme.id}.png", null, overlayKey = null, themeIndex = index)
@@ -75,7 +103,7 @@ class CarPreviewActivity : Activity() {
         height: Int = HEIGHT,
         themeIndex: Int = 0,
     ) {
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val bitmap = Bitmap.createBitmap(width, height + CAPTION_HEIGHT, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val renderer = TileRenderer().apply { setBackground(wallpaper) }
         if (tile != null) renderer.toggle(tile)
@@ -88,18 +116,26 @@ class CarPreviewActivity : Activity() {
             themeIndex = themeIndex,
             mode = TileRenderer.Mode.CAR,
         )
-        previewLabel(canvas)
+        previewLabel(canvas, width, height)
         val file = File(output, name)
         FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         Log.i(TAG, "Wrote ${file.absolutePath}")
     }
 
-    private fun previewLabel(canvas: Canvas) {
+    private fun previewLabel(canvas: Canvas, width: Int, height: Int) {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            textSize = 14f
+            color = Color.rgb(150, 150, 150)
+            textSize = 13f
         }
-        canvas.drawText("LAYOUT PREVIEW · NOT CAR FOOTAGE", 18f, HEIGHT - 8f, paint)
+        canvas.drawRect(0f, height.toFloat(), width.toFloat(), (height + CAPTION_HEIGHT).toFloat(), Paint().apply {
+            color = Color.rgb(12, 12, 12)
+        })
+        canvas.drawText(
+            "LAYOUT PREVIEW · NOT CAR FOOTAGE · ${width}×${height}",
+            18f,
+            height + 17f,
+            paint,
+        )
     }
 
     private fun previewState(): DashboardState {
@@ -133,5 +169,6 @@ class CarPreviewActivity : Activity() {
         private const val TAG = "CarPreview"
         private const val WIDTH = 1920
         private const val HEIGHT = 720
+        private const val CAPTION_HEIGHT = 26
     }
 }

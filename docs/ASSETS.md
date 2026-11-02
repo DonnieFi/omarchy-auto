@@ -19,6 +19,9 @@ Use and credit:
   credited to Tom Ballard in [`CREDITS.md`](../CREDITS.md).
 - `local-assets/` remains ignored by git. A private app build can embed the
   owner's copy with `-Pomarchy.includeLocalAssets=true`.
+- Setup's `USE TOM BACKGROUND` copies the bundled `wallpaper.jpg` into
+  app-private storage. `CHOOSE BACKGROUND` stores a user-selected image there;
+  `USE THEME BACKGROUNDS` removes the custom override.
 - Default/public app builds exclude `local-assets/` and use the Omarchy theme
   backgrounds or the code-drawn fallback.
 - The project [MIT licence](../LICENSE) covers project code and original assets,

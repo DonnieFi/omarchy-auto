@@ -8,6 +8,7 @@ import android.os.HandlerThread
 import android.util.Log
 import android.view.Surface
 import com.omarchy.auto.core.AppBackground
+import com.omarchy.auto.core.BackgroundStore
 import com.omarchy.auto.core.LiveDataStore
 import com.omarchy.auto.core.MediaTransport
 import com.omarchy.auto.core.OmarchyNotificationListener
@@ -37,11 +38,13 @@ class CarSurfaceRenderer(
     private val renderer = TileRenderer()
     private val drawLock = ReentrantLock()
     private val released = AtomicBoolean(false)
+    private var backgroundRevision = -1
 
     @Volatile
     private var stopped = false
 
     init {
+        BackgroundStore.init(appContext)
         refreshBackground()
     }
 
@@ -171,6 +174,7 @@ class CarSurfaceRenderer(
     }
 
     private fun refreshBackground() {
+        backgroundRevision = BackgroundStore.revision
         AppBackground.loadAsync(appContext, ThemeStore.current()) { bitmap ->
             handler.post {
                 if (!stopped) {
@@ -190,6 +194,9 @@ class CarSurfaceRenderer(
         if (stopped) {
             releaseSurface()
             return
+        }
+        if (BackgroundStore.revision != backgroundRevision) {
+            refreshBackground()
         }
         drawLock.lock()
         try {
