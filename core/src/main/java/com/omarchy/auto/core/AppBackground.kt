@@ -3,8 +3,11 @@ package com.omarchy.auto.core
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.Handler
+import android.os.Looper
 import java.io.File
 import java.io.InputStream
+import java.util.concurrent.Executors
 
 /**
  * Theme-matched wallpaper. Omarchy backgrounds live in
@@ -22,6 +25,12 @@ object AppBackground {
     var bitmap: Bitmap? = null
         private set
 
+    private val main = Handler(Looper.getMainLooper())
+    private val decoder = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "omarchy-theme-bg").apply { isDaemon = true }
+    }
+    private var generation = 0
+
     fun load(context: Context, theme: OmarchyTheme): Bitmap? {
         val id = theme.id
         if (currentId == id) return bitmap
@@ -31,6 +40,17 @@ object AppBackground {
             bitmap = next
             currentId = id
             return next
+        }
+    }
+
+    fun loadAsync(context: Context, theme: OmarchyTheme, callback: (Bitmap?) -> Unit) {
+        val app = context.applicationContext
+        val request = synchronized(this) { ++generation }
+        decoder.execute {
+            val loaded = load(app, theme)
+            main.post {
+                if (request == synchronized(this) { generation }) callback(loaded)
+            }
         }
     }
 

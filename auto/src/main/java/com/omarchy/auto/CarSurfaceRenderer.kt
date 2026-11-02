@@ -34,20 +34,22 @@ class CarSurfaceRenderer(
     private val appContext = context.applicationContext
     private val thread = HandlerThread("omarchy-car-surface").apply { start() }
     private val handler = Handler(thread.looper)
-    private val renderer = TileRenderer().apply {
-        setBackground(AppBackground.load(context, ThemeStore.current()))
-    }
+    private val renderer = TileRenderer()
     private val drawLock = ReentrantLock()
     private val released = AtomicBoolean(false)
 
     @Volatile
     private var stopped = false
 
+    init {
+        refreshBackground()
+    }
+
     private val tick = object : Runnable {
         override fun run() {
             if (stopped) return
             draw()
-            if (!stopped) handler.postDelayed(this, 1000L)
+            if (!stopped) handler.postDelayed(this, 30_000L)
         }
     }
 
@@ -169,7 +171,14 @@ class CarSurfaceRenderer(
     }
 
     private fun refreshBackground() {
-        renderer.setBackground(AppBackground.load(appContext, ThemeStore.current()))
+        AppBackground.loadAsync(appContext, ThemeStore.current()) { bitmap ->
+            handler.post {
+                if (!stopped) {
+                    renderer.setBackground(bitmap)
+                    draw()
+                }
+            }
+        }
     }
 
     private fun toggle(tile: TileId) {

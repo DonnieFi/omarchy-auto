@@ -11,6 +11,7 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
+import android.location.Location
 import android.text.TextPaint
 import android.text.TextUtils
 import java.text.SimpleDateFormat
@@ -177,12 +178,14 @@ class TileRenderer {
         }?.takeIf { it.width() > 100f && it.height() > 100f } ?: RectF(0f, 0f, width.toFloat(), height.toFloat())
 
         val car = mode == Mode.CAR
+        MapViewport.active = selected == TileId.DRIVE
         val landscape = area.width() > area.height() * 1.25f
-        val unit = if (landscape) {
+        val rawUnit = if (landscape) {
             minOf(area.width() / 1280f, area.height() / 720f)
         } else {
             area.width() / 720f
-        }.coerceAtLeast(0.7f)
+        }
+        val unit = if (car) rawUnit else rawUnit.coerceAtLeast(0.7f)
 
         val margin = (if (car) 18f else 14f) * unit
         val gap = (if (car) 12f else 10f) * unit
@@ -834,11 +837,31 @@ class TileRenderer {
         state: DashboardState,
         unit: Float,
     ) {
+        publishMapViewport(content)
         val map = MapSnapshotStore.bitmap
+        val mapAgeMs = if (map != null) {
+            (System.currentTimeMillis() - MapSnapshotStore.updatedAt).coerceAtLeast(0L)
+        } else {
+            Long.MAX_VALUE
+        }
+        val snapshotLat = MapSnapshotStore.latitude
+        val snapshotLon = MapSnapshotStore.longitude
+        val currentLat = state.latitude
+        val currentLon = state.longitude
+        val movedMeters = if (snapshotLat != null && snapshotLon != null &&
+            currentLat != null && currentLon != null
+        ) {
+            val distance = FloatArray(1)
+            Location.distanceBetween(snapshotLat, snapshotLon, currentLat, currentLon, distance)
+            distance[0]
+        } else {
+            0f
+        }
+        val stale = map != null && mapAgeMs > STALE_AFTER_MS && movedMeters > 30f
         if (map != null) {
             drawCenterCrop(canvas, map, content)
             fill.style = Paint.Style.FILL
-            fill.color = Color.argb(38, Color.red(theme.background), Color.green(theme.background), Color.blue(theme.background))
+            fill.color = withAlpha(theme.background, (theme.scrimAlpha * 0.45f).toInt().coerceIn(20, 80))
             canvas.drawRect(content, fill)
         } else {
             fill.style = Paint.Style.FILL
@@ -874,7 +897,33 @@ class TileRenderer {
             )
         }
 
-        if (state.gpsActive && map != null) {
+        if (stale) {
+            val label = "MAP STALE"
+            val size = 10f * unit
+            val badge = RectF(
+                content.right - 12f * unit - measure(label, size, bold = true) - 16f * unit,
+                content.top + 10f * unit,
+                content.right - 12f * unit,
+                content.top + 32f * unit,
+            )
+            fill.color = withAlpha(theme.background, 215)
+            canvas.drawRoundRect(badge, 2f * unit, 2f * unit, fill)
+            stroke.style = Paint.Style.STROKE
+            stroke.strokeWidth = 1f * unit
+            stroke.color = theme.yellow
+            canvas.drawRoundRect(badge, 2f * unit, 2f * unit, stroke)
+            text(
+                canvas,
+                label,
+                badge.left + 8f * unit,
+                badge.centerY() + 3f * unit,
+                size,
+                theme.yellow,
+                bold = true,
+            )
+        }
+
+        if (state.gpsActive && map != null && !stale) {
             val cx = content.centerX()
             val cy = content.centerY()
             fill.color = Color.argb(90, 0, 0, 0)
@@ -922,15 +971,32 @@ class TileRenderer {
             if (state.gpsActive) theme.green else theme.dim,
         )
 
-        val attribution = "© OpenStreetMap contributors · OpenFreeMap"
+        val attribution = "© OpenStreetMap · OpenFreeMap"
+        val attributionSize = 8f * unit
+        val attributionMax = (content.width() - 312f * unit).coerceAtLeast(80f * unit)
+        val attributionWidth = minOf(measure(attribution, attributionSize), attributionMax)
         text(
             canvas,
             attribution,
-            content.right - 8f * unit - measure(attribution, 8f * unit),
+            content.right - 8f * unit - attributionWidth,
             content.bottom - 8f * unit,
-            8f * unit,
+            attributionSize,
             theme.dim,
+            maxWidth = attributionMax,
         )
+    }
+
+    private fun publishMapViewport(content: RectF) {
+        var width = content.width().toInt().coerceAtLeast(320)
+        var height = content.height().toInt().coerceAtLeast(240)
+        val pixels = width.toLong() * height
+        if (pixels > 2_000_000L) {
+            val scale = kotlin.math.sqrt(2_000_000.0 / pixels.toDouble())
+            width = (width * scale).toInt().coerceAtLeast(320)
+            height = (height * scale).toInt().coerceAtLeast(240)
+        }
+        MapViewport.width = width
+        MapViewport.height = height
     }
 
     private fun drawCenterCrop(canvas: Canvas, bitmap: Bitmap, content: RectF) {
@@ -1522,5 +1588,9 @@ class TileRenderer {
     private fun formatTime(ms: Long): String {
         val total = (ms / 1000L).coerceAtLeast(0L)
         return "%d:%02d".format(Locale.US, total / 60L, total % 60L)
+    }
+
+    companion object {
+        private const val STALE_AFTER_MS = 6_000L
     }
 }

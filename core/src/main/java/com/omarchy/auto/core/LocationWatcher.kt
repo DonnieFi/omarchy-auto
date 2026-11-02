@@ -24,6 +24,7 @@ class LocationWatcher(
     private val manager = app.getSystemService(LocationManager::class.java)
     private var started = false
     private var wanted = false
+    private var lastBearing = 0f
 
     fun start() {
         if (started) return
@@ -98,8 +99,11 @@ class LocationWatcher(
 
     private fun publish(location: Location) {
         val speed = if (location.hasSpeed()) location.speed * 3.6f else null
-        val bearing = if (location.hasBearing()) location.bearing else 0f
+        val moving = speed == null || speed >= 5f
+        if (location.hasBearing() && moving) {
+            lastBearing = location.bearing
+        }
         val accuracy = if (location.hasAccuracy()) location.accuracy else null
-        onUpdate(speed, true, location.latitude, location.longitude, bearing, accuracy)
+        onUpdate(speed, true, location.latitude, location.longitude, lastBearing, accuracy)
     }
 }

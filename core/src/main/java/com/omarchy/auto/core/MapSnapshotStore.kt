@@ -19,8 +19,18 @@ object MapSnapshotStore {
     var updatedAt: Long = 0L
         private set
 
-    fun set(bitmap: Bitmap) {
+    @Volatile
+    var latitude: Double? = null
+        private set
+
+    @Volatile
+    var longitude: Double? = null
+        private set
+
+    fun set(bitmap: Bitmap, lat: Double, lon: Double) {
         this.bitmap = bitmap
+        latitude = lat
+        longitude = lon
         error = null
         updatedAt = System.currentTimeMillis()
     }

@@ -158,7 +158,7 @@ useful history.
 - [x] Phone launcher runs, theme switch works, live MediaSession and
       notifications work, GPS fix obtained, tile launch/back works.
 - [x] Real Android Auto car screen over USB (0.1.1, owner's Kia, 2026-11-01).
-- [x] Real AA Media/comms surface seen in the car video; 0.1.5 real-map/sizing pass is the remaining check.
+- [x] Real AA Media/comms surface seen in the car video; 0.1.7 real-map/sizing pass is the remaining check.
 - [x] 1280×720 capture in `docs/img/` (phone launcher, fallback background, clearly labeled).
 - [x] Vehicle mock visibly labeled.
 

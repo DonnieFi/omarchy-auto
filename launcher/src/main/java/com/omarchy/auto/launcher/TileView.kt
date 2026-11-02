@@ -7,6 +7,7 @@ import android.os.Looper
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import com.omarchy.auto.core.AppBackground
 import com.omarchy.auto.core.DashboardState
 import com.omarchy.auto.core.LiveDataStore
@@ -23,6 +24,10 @@ class TileView @JvmOverloads constructor(
 
     private val renderer = TileRenderer()
     private val handler = Handler(Looper.getMainLooper())
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private var downHit: TileRenderer.Hit? = null
+    private var downX = 0f
+    private var downY = 0f
     private val ticker = object : Runnable {
         override fun run() {
             invalidate()
@@ -71,82 +76,116 @@ class TileView @JvmOverloads constructor(
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> return true
-            MotionEvent.ACTION_UP -> {
-                val hit = renderer.hitTest(event.x, event.y) ?: return true
-                when (hit.target) {
-                    TileRenderer.Target.THEME -> {
-                        renderer.show(TileId.HOME)
-                        invalidate()
-                    }
+            MotionEvent.ACTION_DOWN -> {
+                downX = event.x
+                downY = event.y
+                downHit = renderer.hitTest(event.x, event.y)
+                return true
+            }
 
-                    TileRenderer.Target.THEME_CHIP -> {
-                        ThemeStore.select(hit.index)
-                        setBackgroundColor(ThemeStore.current().background)
-                        refreshBackground()
-                        invalidate()
-                    }
-
-                    TileRenderer.Target.SETUP -> onSetup?.invoke()
-                    TileRenderer.Target.STAGE_OPEN -> renderer.selected?.let { onTileTap?.invoke(it) }
-                    TileRenderer.Target.PLAY_PAUSE -> {
-                        MediaTransport.toggle()
-                        invalidate()
-                    }
-
-                    TileRenderer.Target.PREV_TRACK -> {
-                        MediaTransport.previous()
-                        invalidate()
-                    }
-
-                    TileRenderer.Target.NEXT_TRACK -> {
-                        MediaTransport.next()
-                        invalidate()
-                    }
-
-                    TileRenderer.Target.NOTIF_REFRESH -> {
-                        OmarchyNotificationListener.refresh(context)
-                        invalidate()
-                    }
-
-                    TileRenderer.Target.NOTIF_CLEAR -> {
-                        OmarchyNotificationListener.dismissDisplayed(context)
-                        invalidate()
-                    }
-
-                    TileRenderer.Target.NOTIFICATION -> {
-                        renderer.openNotification(hit.key)
-                        invalidate()
-                    }
-
-                    TileRenderer.Target.NOTIF_CLOSE,
-                    TileRenderer.Target.OVERLAY_DISMISS,
-                    -> {
-                        renderer.closeNotification()
-                        invalidate()
-                    }
-
-                    TileRenderer.Target.NOTIF_DISMISS_ONE -> {
-                        hit.key?.let { OmarchyNotificationListener.dismiss(context, it) }
-                        renderer.closeNotification()
-                        invalidate()
-                    }
-
-                    TileRenderer.Target.TILE_DRIVE -> toggle(TileId.DRIVE)
-                    TileRenderer.Target.TILE_MEDIA -> toggle(TileId.MEDIA)
-                    TileRenderer.Target.TILE_COMMS -> toggle(TileId.COMMS)
-                    TileRenderer.Target.TILE_VEHICLE -> toggle(TileId.VEHICLE)
-                    TileRenderer.Target.TILE_HOME -> toggle(TileId.HOME)
+            MotionEvent.ACTION_MOVE -> {
+                if (downHit != null &&
+                    (kotlin.math.abs(event.x - downX) > touchSlop ||
+                        kotlin.math.abs(event.y - downY) > touchSlop)
+                ) {
+                    downHit = null
                 }
-                performClick()
+                return true
+            }
+
+            MotionEvent.ACTION_UP -> {
+                val start = downHit
+                downHit = null
+                if (start != null) {
+                    val end = renderer.hitTest(event.x, event.y)
+                    if (start == end) {
+                        perform(start)
+                        performClick()
+                    }
+                }
+                return true
+            }
+
+            MotionEvent.ACTION_CANCEL -> {
+                downHit = null
                 return true
             }
         }
         return super.onTouchEvent(event)
     }
 
+    private fun perform(hit: TileRenderer.Hit) {
+        when (hit.target) {
+            TileRenderer.Target.THEME -> {
+                renderer.show(TileId.HOME)
+                invalidate()
+            }
+
+            TileRenderer.Target.THEME_CHIP -> {
+                ThemeStore.select(hit.index)
+                setBackgroundColor(ThemeStore.current().background)
+                refreshBackground()
+                invalidate()
+            }
+
+            TileRenderer.Target.SETUP -> onSetup?.invoke()
+            TileRenderer.Target.STAGE_OPEN -> renderer.selected?.let { onTileTap?.invoke(it) }
+            TileRenderer.Target.PLAY_PAUSE -> {
+                MediaTransport.toggle()
+                invalidate()
+            }
+
+            TileRenderer.Target.PREV_TRACK -> {
+                MediaTransport.previous()
+                invalidate()
+            }
+
+            TileRenderer.Target.NEXT_TRACK -> {
+                MediaTransport.next()
+                invalidate()
+            }
+
+            TileRenderer.Target.NOTIF_REFRESH -> {
+                OmarchyNotificationListener.refresh(context)
+                invalidate()
+            }
+
+            TileRenderer.Target.NOTIF_CLEAR -> {
+                OmarchyNotificationListener.dismissDisplayed(context)
+                invalidate()
+            }
+
+            TileRenderer.Target.NOTIFICATION -> {
+                renderer.openNotification(hit.key)
+                invalidate()
+            }
+
+            TileRenderer.Target.NOTIF_CLOSE,
+            TileRenderer.Target.OVERLAY_DISMISS,
+            -> {
+                renderer.closeNotification()
+                invalidate()
+            }
+
+            TileRenderer.Target.NOTIF_DISMISS_ONE -> {
+                hit.key?.let { OmarchyNotificationListener.dismiss(context, it) }
+                renderer.closeNotification()
+                invalidate()
+            }
+
+            TileRenderer.Target.TILE_DRIVE -> toggle(TileId.DRIVE)
+            TileRenderer.Target.TILE_MEDIA -> toggle(TileId.MEDIA)
+            TileRenderer.Target.TILE_COMMS -> toggle(TileId.COMMS)
+            TileRenderer.Target.TILE_VEHICLE -> toggle(TileId.VEHICLE)
+            TileRenderer.Target.TILE_HOME -> toggle(TileId.HOME)
+        }
+    }
+
     private fun refreshBackground() {
-        renderer.setBackground(AppBackground.load(context, ThemeStore.current()))
+        AppBackground.loadAsync(context, ThemeStore.current()) { bitmap ->
+            renderer.setBackground(bitmap)
+            invalidate()
+        }
     }
 
     private fun toggle(tile: TileId) {

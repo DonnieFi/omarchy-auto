@@ -83,15 +83,15 @@ class SetupActivity : Activity() {
             column.addView(label("ANDROID AUTO OVER USB", 12f, theme.dim, letterSpacing = 0.12f))
             column.addView(
                 label(
-                    "1. On the phone, open Android Auto settings and enable Developer mode.\n" +
-                        "2. In Developer settings, enable “Unknown sources”.\n" +
+                    "1. Install this private build through Play Internal App Sharing.\n" +
+                        "2. Open Omarchy Auto setup and grant the permissions above.\n" +
                         "3. Connect the phone to the car with USB.\n" +
                         "4. Launch Omarchy Auto from the Android Auto launcher.\n\n" +
                         "The car display is drawn by this app on the NavigationTemplate map surface. " +
                         "The host still owns the surrounding Android Auto action strip.\n\n" +
-                        "Note: current Android Auto versions may not list sideloaded Car App " +
-                        "Library apps even with Unknown sources on. If it is hidden, use Play " +
-                        "Internal App Sharing or a dev phone that permits it. See the README.",
+                        "Unknown sources is not required for a Play-installed build. If you use an " +
+                        "ADB-sideloaded Car App Library build, Android Auto may hide it even with " +
+                        "Unknown sources on. See the README.",
                     13f,
                     theme.foreground,
                 ).apply {
@@ -100,6 +100,18 @@ class SetupActivity : Activity() {
                 },
             )
         }
+
+        column.addView(space(16))
+        column.addView(label("MAP & LOCATION PRIVACY", 12f, theme.dim, letterSpacing = 0.12f))
+        column.addView(
+            label(
+                "When the Drive stage is open, the phone's location is sent to OpenFreeMap " +
+                    "tile servers so the map can be rendered. Omarchy Auto does not store a " +
+                    "location history. There is no map-off switch yet.",
+                12f,
+                theme.dim,
+            ).apply { setPadding(0, dp(8), 0, dp(18)) },
+        )
 
         column.addView(
             button("APP DETAILS") {

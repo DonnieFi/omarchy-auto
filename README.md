@@ -32,7 +32,7 @@ Built and checked on this machine:
   content stage. Tap a rail tile to engage it. Media has an in-app play/pause
   control; the stage `OPEN` button launches the real app.
 - Android Auto 0.1.1 was verified on the owner's real Kia Android Auto screen
-  over USB using Play Internal App Sharing. The 0.1.5 theme/map/sizing build is
+  over USB using Play Internal App Sharing. The 0.1.7 theme/map/sizing build is
   pending a car pass; the phone launcher has been used for map, theme and layout
   checks.
 - The Desktop Head Unit was attempted, but the emulator image's Android Auto
@@ -144,8 +144,8 @@ Without it the UI says so instead of inventing data.
 
 ### Android Auto — private Play test
 
-Current private build: **0.1.5** (versionCode 6), AAB at
-`release/omarchy-auto-0.1.5-aa-release.aab`.
+Current private build: **0.1.7** (versionCode 8), AAB at
+`release/omarchy-auto-0.1.7-aa-release.aab`.
 
 Android Auto does not trust an ADB-sideloaded Car App Library app. The reliable
 private route is **Play Internal App Sharing**: it installs the build from Play,
@@ -153,7 +153,7 @@ without a public listing or review, and accepts a debug APK or signed AAB.
 
 1. In Play Console, create an app with package name `com.omarchy.auto`.
 2. **Test and release → Internal app sharing**, upload
-   `release/omarchy-auto-0.1.5-aa-release.aab`.
+   `release/omarchy-auto-0.1.7-aa-release.aab`.
 3. Copy the sharing link. A Play-installed 0.1.1 can update in place; if the
    phone has an ADB-signed copy, uninstall it first, then open the link and
    install from Play.
@@ -164,7 +164,7 @@ without a public listing or review, and accepts a debug APK or signed AAB.
    build.
 
 Internal App Sharing re-signs the upload. This is still a private test app; it
-is not a public release. The 0.1.5 AAB includes MapLibre native libraries and,
+is not a public release. The 0.1.7 AAB includes MapLibre native libraries and,
 when built with `-Pomarchy.includeLocalAssets=true`, the local-only wallpaper.
 
 The car app uses the Car App Library **NAVIGATION** category. It draws the five
@@ -187,13 +187,15 @@ top-bar `THEME` button for hosts that forward surface clicks.
 
 ```text
 core/                         shared Kotlin Android library
-  Theme.kt                    4 Omarchy palettes
+  Theme.kt                    10 Omarchy palettes + background ids
   Model.kt                    TileId, DashboardState, MediaSnapshot, NotificationItem
   TileRenderer.kt             one Canvas renderer for AA surface + phone View
   LiveDataStore / Controller  in-process state and source lifecycle
   MediaWatcher                MediaSessionManager + MediaController
   OmarchyNotificationListener NotificationListenerService
-  LocationWatcher             GPS speed
+  LocationWatcher             GPS speed + held heading at low speed
+  MapSnapshotController       MapLibre/OpenFreeMap snapshots at the stage size
+  MapSnapshotStore / Viewport latest map bitmap, size + staleness
   SetupActivity               permission setup
 
 auto/                         Android Auto app (com.omarchy.auto)
@@ -218,18 +220,18 @@ that future path.
 | Five-tile layout, cut-out legends, mono type, 2px borders | Yes, shared renderer |
 | Themes | 10 Omarchy palettes + matching backgrounds; phone switch verified |
 | Clock | Live, every second |
-| Media | Live MediaSession metadata/art/progress in launcher; AA app wired, not host-tested |
+| Media | Live MediaSession metadata/art/progress; phone and car paths wired; 0.1.1 car test verified |
 | Notifications | Live listener + existing-notification load; launcher verified |
 | GPS speed | Location/GPS speed; launcher got a fix at 0 km/h on the bench |
 | Vehicle | Mock, visible `MOCK` label; no Torque launch |
 | Right rail + large stage | Verified on emulator and phone |
 | Rotation | Portrait/landscape reflow verified on the S24 FE |
 | Media play/pause/previous/next | Wired to MediaTransport; car pass pending |
-| AA NavigationTemplate + SurfaceCallback | Verified on real AA (0.1.1); 0.1.5 map/sizing pending |
+| AA NavigationTemplate + SurfaceCallback | Verified on real AA (0.1.1); 0.1.7 theme/map/sizing pending |
 | Real map | OpenFreeMap dark style via MapLibre snapshots + live location puck; phone verified, car pending |
 | Notification detail | Full-screen card overlay; phone preview verified |
 | Phone stage OPEN + Back | Verified with YouTube Music/Maps path |
-| 1280×720 screenshot | `docs/img/launcher-1280x720.png` (fallback background) |
+| README hero | `docs/img/hero-tokyo-night.webp` (Tom Ballard Tokyo Studio render, credited) |
 
 ## Verification
 
@@ -243,22 +245,25 @@ that future path.
   plus existing notifications after listener reconnect.
 - Tile-to-YouTube-Music and Back-to-launcher verified.
 - GPS provider returned a fix; speed read zero while stationary.
-- Android Auto host: 0.1.1 verified on the owner's real Kia screen. The 0.1.5
-  real-map and larger-type build still needs the same car pass.
+- Android Auto host: 0.1.1 verified on the owner's real Kia screen. The 0.1.7
+  theme/map/sizing build still needs the same car pass.
 - Real map: MapLibre snapshot of `https://tiles.openfreemap.org/styles/dark`
   with a live location puck and OpenStreetMap/OpenFreeMap attribution. No
   routing or turn-by-turn.
 
 ## Limitations
 
-- The 0.1.5 real-map and larger-type build still needs a real-car acceptance
-  pass. 0.1.1 was verified there.
+- The 0.1.7 theme/map/sizing build still needs a real-car acceptance pass.
+  0.1.1 was verified there.
 - Sideloaded Car App Library availability is subject to Google's host policy;
   use Play Internal App Sharing for the trusted install.
-- The AA action strip was visible in the 0.1.1 car test; 0.1.5 surface hit
+- The AA action strip was visible in the 0.1.1 car test; 0.1.7 surface hit
   testing still needs confirmation.
 - Media controls send play/pause, previous, and next through MediaController.
 - Notifications are not yet allow-listed; OTP/2FA filtering is future work.
+- Location privacy: when the Drive stage is open, the phone's location is sent
+  to OpenFreeMap tile servers to render the map. Omarchy Auto does not store a
+  location history. There is no map-off switch yet.
 - Vehicle data is mock until OBD-II; Torque is not wired up.
 - The Tokyo Studio artwork is included in the README with credit to Tom Ballard;
   app public builds still exclude it unless the private local-assets flag is

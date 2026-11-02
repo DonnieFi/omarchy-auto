@@ -24,6 +24,8 @@ class MapSnapshotController(context: Context) {
     private val app = context.applicationContext
     private val main = Handler(Looper.getMainLooper())
     private var snapshotter: MapSnapshotter? = null
+    private var snapshotWidth = 0
+    private var snapshotHeight = 0
     private var inFlight = false
     private var started = false
     private var lastRequestAt = 0L
@@ -60,10 +62,14 @@ class MapSnapshotController(context: Context) {
             } catch (_: Exception) {
                 // Snapshot teardown races are harmless.
             }
+            snapshotter = null
+            snapshotWidth = 0
+            snapshotHeight = 0
         }
     }
 
     private fun onState(state: DashboardState) {
+        if (!MapViewport.active) return
         val lat = state.latitude ?: return
         val lon = state.longitude ?: return
         if (!state.gpsActive) return
@@ -96,18 +102,25 @@ class MapSnapshotController(context: Context) {
             .bearing(bearing.toDouble())
             .build()
         try {
-            if (snapshotter == null) {
-                val options = MapSnapshotter.Options(WIDTH, HEIGHT)
+            val width = MapViewport.width.coerceAtLeast(320)
+            val height = MapViewport.height.coerceAtLeast(240)
+            if (snapshotter == null || width != snapshotWidth || height != snapshotHeight) {
+                snapshotter?.cancel()
+                val options = MapSnapshotter.Options(width, height)
                     .withStyleBuilder(Style.Builder().fromUri(STYLE_URL))
                     .withCameraPosition(camera)
                     .withPixelRatio(1f)
+                    .withLogo(false)
+                    .withAttribution(false)
                 snapshotter = MapSnapshotter(app, options)
+                snapshotWidth = width
+                snapshotHeight = height
             } else {
                 snapshotter?.setCameraPosition(camera)
             }
             snapshotter?.start(
                 { snapshot: MapSnapshot ->
-                    MapSnapshotStore.set(snapshot.bitmap)
+                    MapSnapshotStore.set(snapshot.bitmap, lat, lon)
                     retryAt = 0L
                     inFlight = false
                     LiveDataStore.notifyMapUpdated()
@@ -134,8 +147,6 @@ class MapSnapshotController(context: Context) {
     companion object {
         private const val TAG = "MapSnapshot"
         private const val STYLE_URL = "https://tiles.openfreemap.org/styles/dark"
-        private const val WIDTH = 1920
-        private const val HEIGHT = 720
         private const val ZOOM = 15.5
         private const val MIN_INTERVAL_MS = 2_500L
         private const val RETRY_MS = 10_000L
