@@ -5,6 +5,8 @@ display is the primary target: a Car App Library **NavigationTemplate** app that
 draws `Drive / Media / Comms / Vehicle / Home` on the Android Auto map surface.
 The same Kotlin Canvas renderer powers a full-screen phone launcher.
 
+**Public pre-alpha site:** [omarchyauto.com](https://omarchyauto.com)
+
 ![Omarchy Auto phone launcher at 1280×720](docs/img/launcher-1280x720.png)
 
 *Phone launcher at 1280×720, opening with every tile minimized. This is the
@@ -30,8 +32,9 @@ Built and checked on this machine:
   content stage. Tap a rail tile to engage it. Media has an in-app play/pause
   control; the stage `OPEN` button launches the real app.
 - Android Auto 0.1.1 was verified on the owner's real Kia Android Auto screen
-  over USB using Play Internal App Sharing. The 0.1.5 real-map/sizing build is
-  pending a car pass; the phone launcher has been used for map and layout checks.
+  over USB using Play Internal App Sharing. The 0.1.5 theme/map/sizing build is
+  pending a car pass; the phone launcher has been used for map, theme and layout
+  checks.
 - The Desktop Head Unit was attempted, but the emulator image's Android Auto
   app is a Play Store stub and the image has no Play Store.
 
@@ -140,6 +143,9 @@ Notification access enables both the Comms tile and MediaSession discovery.
 Without it the UI says so instead of inventing data.
 
 ### Android Auto — private Play test
+
+Current private build: **0.1.5** (versionCode 6), AAB at
+`release/omarchy-auto-0.1.5-aa-release.aab`.
 
 Android Auto does not trust an ADB-sideloaded Car App Library app. The reliable
 private route is **Play Internal App Sharing**: it installs the build from Play,
