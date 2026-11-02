@@ -126,6 +126,12 @@ class TileView @JvmOverloads constructor(
                         invalidate()
                     }
 
+                    TileRenderer.Target.NOTIF_DISMISS_ONE -> {
+                        hit.key?.let { OmarchyNotificationListener.dismiss(context, it) }
+                        renderer.closeNotification()
+                        invalidate()
+                    }
+
                     TileRenderer.Target.TILE_DRIVE -> toggle(TileId.DRIVE)
                     TileRenderer.Target.TILE_MEDIA -> toggle(TileId.MEDIA)
                     TileRenderer.Target.TILE_COMMS -> toggle(TileId.COMMS)

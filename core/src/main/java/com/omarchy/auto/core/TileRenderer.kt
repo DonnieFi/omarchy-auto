@@ -38,6 +38,7 @@ class TileRenderer {
         NOTIF_CLEAR,
         NOTIFICATION,
         NOTIF_CLOSE,
+        NOTIF_DISMISS_ONE,
         OVERLAY_DISMISS,
         TILE_DRIVE,
         TILE_MEDIA,
@@ -61,6 +62,7 @@ class TileRenderer {
         val notifications: List<Pair<String, RectF>>,
         val notifCard: RectF?,
         val notifClose: RectF?,
+        val notifDismissOne: RectF?,
         val tiles: Map<Target, RectF>,
     )
 
@@ -83,6 +85,7 @@ class TileRenderer {
     private data class OverlayHit(
         val card: RectF,
         val close: RectF,
+        val dismiss: RectF,
     )
 
     private data class MediaHit(
@@ -258,6 +261,7 @@ class TileRenderer {
             notifications = stageHit.notifications.map { it.first to RectF(it.second) },
             notifCard = overlayHit?.card?.let { RectF(it) },
             notifClose = overlayHit?.close?.let { RectF(it) },
+            notifDismissOne = overlayHit?.dismiss?.let { RectF(it) },
             tiles = railRects.associate { (id, rect) ->
                 when (id) {
                     TileId.DRIVE -> Target.TILE_DRIVE
@@ -274,6 +278,9 @@ class TileRenderer {
         val layout = lastLayout ?: return null
         if (overlayKey != null) {
             layout.notifClose?.takeIf { it.contains(x, y) }?.let { return Hit(Target.NOTIF_CLOSE) }
+            layout.notifDismissOne?.takeIf { it.contains(x, y) }?.let {
+                return Hit(Target.NOTIF_DISMISS_ONE, key = overlayKey)
+            }
             if (layout.notifCard?.contains(x, y) == true) return null
             return Hit(Target.OVERLAY_DISMISS)
         }
@@ -636,6 +643,7 @@ class TileRenderer {
         label: String,
         theme: OmarchyTheme,
         unit: Float,
+        color: Int? = null,
     ) {
         fill.style = Paint.Style.FILL
         fill.color = withAlpha(theme.surfaceAlt, 235)
@@ -651,7 +659,7 @@ class TileRenderer {
             rect.centerX() - measure(label, textSize, bold = true) / 2f,
             rect.centerY() + 3f * unit,
             textSize,
-            theme.accent,
+            color ?: theme.accent,
             bold = true,
         )
     }
@@ -1271,14 +1279,23 @@ class TileRenderer {
         baseline += 18f * overlayUnit
 
         val closeLabel = "CLOSE"
-        val closeTextSize = 9f * overlayUnit
-        val closeWidth = measure(closeLabel, closeTextSize, bold = true) + 24f * overlayUnit
-        val closeHeight = 30f * overlayUnit
+        val dismissLabel = "DISMISS"
+        val buttonTextSize = 9f * overlayUnit
+        val closeWidth = measure(closeLabel, buttonTextSize, bold = true) + 24f * overlayUnit
+        val dismissWidth = measure(dismissLabel, buttonTextSize, bold = true) + 24f * overlayUnit
+        val buttonHeight = 30f * overlayUnit
+        val gap = 10f * overlayUnit
         val close = RectF(
             card.right - pad - closeWidth,
-            card.bottom - pad - closeHeight,
+            card.bottom - pad - buttonHeight,
             card.right - pad,
             card.bottom - pad,
+        )
+        val dismiss = RectF(
+            close.left - gap - dismissWidth,
+            close.top,
+            close.left - gap,
+            close.bottom,
         )
         val bodyBottom = close.top - 18f * overlayUnit
         val maxLines = ((bodyBottom - baseline) / lineHeight).toInt().coerceAtLeast(1)
@@ -1304,7 +1321,8 @@ class TileRenderer {
             theme.dim,
         )
         drawTextButton(canvas, close, closeLabel, theme, overlayUnit)
-        return OverlayHit(card = card, close = close)
+        drawTextButton(canvas, dismiss, dismissLabel, theme, overlayUnit, color = theme.red)
+        return OverlayHit(card = card, close = close, dismiss = dismiss)
     }
 
     private fun drawVehicle(

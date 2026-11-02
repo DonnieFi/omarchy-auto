@@ -142,6 +142,12 @@ class CarSurfaceRenderer(
                     draw()
                 }
 
+                TileRenderer.Target.NOTIF_DISMISS_ONE -> {
+                    hit.key?.let { OmarchyNotificationListener.dismiss(appContext, it) }
+                    renderer.closeNotification()
+                    draw()
+                }
+
                 TileRenderer.Target.TILE_DRIVE -> toggle(TileId.DRIVE)
                 TileRenderer.Target.TILE_MEDIA -> toggle(TileId.MEDIA)
                 TileRenderer.Target.TILE_COMMS -> toggle(TileId.COMMS)

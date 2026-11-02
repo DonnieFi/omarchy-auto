@@ -9,11 +9,11 @@ You are taking over the existing Omarchy Auto Android project. Do not rewrite th
 - **Phone:** Samsung SM-S721W, Android 17, currently reachable over wireless ADB. Check `adb devices -l`; the endpoint may change.
 - **Android Auto version on phone:** 17.9.664054-release as last checked.
 
-> **Current private build (2026-11-01):** versionCode 4 / 0.1.3, signed AAB at
-> `release/omarchy-auto-0.1.3-aa-release.aab` (SHA-256
-> `5a2fe0fd6bdbe4dc62d358ca4f1d8b95e05ddc3f8c8fec603a225d91d721f0cb`).
+> **Current private build (2026-11-01):** versionCode 5 / 0.1.4, signed AAB at
+> `release/omarchy-auto-0.1.4-aa-release.aab` (SHA-256
+> `c2db95c672a2165c6959591626ce93886ea7f33d63603b91217265dff400bafa`).
 > 0.1.1 was already installed through Internal App Sharing and verified on the
-> owner's Kia; upload this 0.1.3 AAB to update it. The debug-APK steps below are
+> owner's Kia; upload this 0.1.4 AAB to update it. The debug-APK steps below are
 > retained as fallback history.
 
 ## Current app state
@@ -45,7 +45,7 @@ cd /mnt/adata/opt/omarchyauto
 ./gradlew :auto:bundleRelease -Pomarchy.includeLocalAssets=true
 ```
 
-Use `release/omarchy-auto-0.1.3-aa-release.aab` (versionCode 4) and record its
+Use `release/omarchy-auto-0.1.4-aa-release.aab` (versionCode 5) and record its
 SHA-256. The private flag is required for the local-only wallpaper; omit it for
 a clean/public build.
 
