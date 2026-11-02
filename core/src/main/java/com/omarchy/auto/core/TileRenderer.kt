@@ -145,6 +145,11 @@ class TileRenderer {
         overlayKey = null
     }
 
+    fun show(tile: TileId) {
+        selected = tile
+        overlayKey = null
+    }
+
     fun openNotification(key: String?) {
         overlayKey = key
     }
@@ -333,18 +338,14 @@ class TileRenderer {
             canvas.drawBitmap(bitmap, wallpaperMatrix, wallpaperPaint)
 
             fill.style = Paint.Style.FILL
-            fill.color = Color.argb(96, 8, 10, 24)
+            fill.color = withAlpha(theme.background, theme.scrimAlpha)
             canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fill)
         } else {
-            val key = (width.toLong() shl 32) xor height.toLong()
+            val key = (width.toLong() shl 32) xor height.toLong() xor theme.id.hashCode().toLong()
             if (fallbackShader == null || fallbackShaderKey != key) {
                 fallbackShader = LinearGradient(
                     0f, 0f, width.toFloat(), height.toFloat(),
-                    intArrayOf(
-                        0xFF05060F.toInt(),
-                        0xFF101A2E.toInt(),
-                        0xFF1A1B26.toInt(),
-                    ),
+                    intArrayOf(theme.background, theme.surfaceAlt, theme.background),
                     null,
                     Shader.TileMode.CLAMP,
                 )
@@ -366,13 +367,13 @@ class TileRenderer {
             stroke.style = Paint.Style.STROKE
             stroke.strokeCap = Paint.Cap.ROUND
             stroke.strokeWidth = 58f * unit
-            stroke.color = Color.argb(120, 28, 32, 58)
+            stroke.color = withAlpha(theme.background, 190)
             canvas.drawPath(route, stroke)
             stroke.strokeWidth = 4f * unit
-            stroke.color = Color.argb(190, 122, 162, 247)
+            stroke.color = withAlpha(theme.accent, 220)
             canvas.drawPath(route, stroke)
             stroke.strokeWidth = 2f * unit
-            stroke.color = Color.argb(120, 187, 154, 247)
+            stroke.color = withAlpha(theme.foreground, 120)
             canvas.drawPath(route, stroke)
 
             val cx = area.left + area.width() * 0.49f
@@ -388,15 +389,15 @@ class TileRenderer {
             route.lineTo(cx + carWidth * 0.5f, cy)
             route.close()
             fill.style = Paint.Style.FILL
-            fill.color = Color.argb(195, 225, 232, 255)
+            fill.color = withAlpha(theme.foreground, 210)
             canvas.drawPath(route, fill)
-            fill.color = Color.argb(210, 18, 22, 38)
+            fill.color = withAlpha(theme.background, 230)
             canvas.drawCircle(cx - carWidth * 0.28f, cy, carHeight * 0.32f, fill)
             canvas.drawCircle(cx + carWidth * 0.28f, cy, carHeight * 0.32f, fill)
-            fill.color = Color.argb(220, 122, 162, 247)
+            fill.color = withAlpha(theme.accent, 220)
             canvas.drawRect(cx - carWidth * 0.30f, cy - carHeight * 0.92f, cx + carWidth * 0.30f, cy - carHeight * 0.78f, fill)
 
-            fill.color = Color.argb(10, 255, 255, 255)
+            fill.color = withAlpha(theme.foreground, 12)
             val step = 44f * unit
             var x = area.left
             while (x <= area.right) {
@@ -410,14 +411,14 @@ class TileRenderer {
             }
         }
 
-        val vignetteKey = height.toLong()
+        val vignetteKey = height.toLong() xor theme.id.hashCode().toLong()
         if (vignetteShader == null || vignetteShaderKey != vignetteKey) {
             vignetteShader = LinearGradient(
                 0f, 0f, 0f, height.toFloat(),
                 intArrayOf(
-                    Color.argb(190, 8, 10, 24),
-                    Color.argb(36, 8, 10, 24),
-                    Color.argb(190, 8, 10, 24),
+                    withAlpha(theme.background, 120),
+                    withAlpha(theme.background, 24),
+                    withAlpha(theme.background, 120),
                 ),
                 floatArrayOf(0f, 0.45f, 1f),
                 Shader.TileMode.CLAMP,
@@ -514,11 +515,25 @@ class TileRenderer {
     ) {
         val textUnit = unit * if (mode == Mode.CAR) 2f else 1f
         val message = "ALL TILES MINIMIZED  ·  SELECT ONE FROM THE RIGHT RAIL"
+        val x = area.left + 18f * textUnit
+        val baseline = tileBottom - 12f * textUnit
+        if (mode == Mode.CAR) {
+            val width = minOf(measure(message, 10f * textUnit), area.width() - 36f * textUnit)
+            val plate = RectF(
+                x - 10f * textUnit,
+                baseline - 10f * textUnit,
+                x + width + 10f * textUnit,
+                baseline + 6f * textUnit,
+            )
+            fill.style = Paint.Style.FILL
+            fill.color = withAlpha(theme.background, 210)
+            canvas.drawRoundRect(plate, 2f * textUnit, 2f * textUnit, fill)
+        }
         text(
             canvas,
             message,
-            area.left + 18f * textUnit,
-            tileBottom - 12f * textUnit,
+            x,
+            baseline,
             10f * textUnit,
             theme.dim,
             maxWidth = area.width() - 36f * textUnit,
@@ -537,7 +552,7 @@ class TileRenderer {
     ): StageHit {
         val id = selected ?: return StageHit(open = null, play = null, setup = null)
         fill.style = Paint.Style.FILL
-        fill.color = withAlpha(theme.surface, 128)
+        fill.color = withAlpha(theme.surface, theme.stageAlpha)
         canvas.drawRoundRect(stage, 2f * unit, 2f * unit, fill)
 
         stroke.style = Paint.Style.STROKE
@@ -1391,17 +1406,21 @@ class TileRenderer {
         text(canvas, clockFormat.format(Date()), content.left, content.top + 34f * unit, 34f * unit, theme.foreground, bold = true)
         text(canvas, dateFormat.format(Date()).uppercase(Locale.US), content.left, content.top + 52f * unit, 9f * unit, theme.dim)
         text(canvas, "OMARCHY AUTO", content.left, content.top + 74f * unit, 9f * unit, theme.accent)
-        val chipTop = content.bottom - 56f * unit
-        text(canvas, "THEME", content.left, chipTop - 10f * unit, 9f * unit, theme.dim)
+        val columns = 5
+        val rows = (Themes.all.size + columns - 1) / columns
         val gap = 4f * unit
-        val chipWidth = (content.width() - gap * (Themes.all.size - 1)) / Themes.all.size
+        val chipHeight = 28f * unit
+        val chipBlockHeight = rows * chipHeight + (rows - 1) * gap
+        val bottomReserve = if (mode == Mode.PHONE) 32f * unit else 8f * unit
+        val chipTop = content.bottom - bottomReserve - chipBlockHeight
+        text(canvas, "THEME", content.left, chipTop - 10f * unit, 9f * unit, theme.dim)
+        val chipWidth = (content.width() - gap * (columns - 1)) / columns
         Themes.all.forEachIndexed { index, item ->
-            val chip = RectF(
-                content.left + (chipWidth + gap) * index,
-                chipTop,
-                content.left + (chipWidth + gap) * index + chipWidth,
-                chipTop + 24f * unit,
-            )
+            val row = index / columns
+            val column = index % columns
+            val left = content.left + (chipWidth + gap) * column
+            val top = chipTop + (chipHeight + gap) * row
+            val chip = RectF(left, top, left + chipWidth, top + chipHeight)
             chips += index to chip
             fill.style = Paint.Style.FILL
             fill.color = if (index == themeIndex) theme.accent else Color.TRANSPARENT
@@ -1412,8 +1431,8 @@ class TileRenderer {
             canvas.drawRect(chip, stroke)
             val label = item.shortName
             text(
-                canvas, label, chip.centerX() - measure(label, 7f * unit) / 2f,
-                chip.centerY() + 3f * unit, 7f * unit,
+                canvas, label, chip.centerX() - measure(label, 8f * unit) / 2f,
+                chip.centerY() + 3f * unit, 8f * unit,
                 if (index == themeIndex) theme.background else theme.dim,
             )
         }
@@ -1430,11 +1449,6 @@ class TileRenderer {
             )
             canvas.restore()
             return setup
-        } else {
-            text(
-                canvas, "AA · MAP SURFACE", content.left, content.bottom - 6f * unit,
-                8f * unit, theme.dim,
-            )
         }
         canvas.restore()
         return null

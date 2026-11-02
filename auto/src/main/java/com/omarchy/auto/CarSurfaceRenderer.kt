@@ -35,7 +35,7 @@ class CarSurfaceRenderer(
     private val thread = HandlerThread("omarchy-car-surface").apply { start() }
     private val handler = Handler(thread.looper)
     private val renderer = TileRenderer().apply {
-        setBackground(AppBackground.load(context))
+        setBackground(AppBackground.load(context, ThemeStore.current()))
     }
     private val drawLock = ReentrantLock()
     private val released = AtomicBoolean(false)
@@ -85,6 +85,15 @@ class CarSurfaceRenderer(
         handler.post(immediateDraw)
     }
 
+    fun openThemePicker() {
+        if (stopped) return
+        handler.post {
+            if (stopped) return@post
+            renderer.show(TileId.HOME)
+            draw()
+        }
+    }
+
     fun setSafeArea(rect: Rect) {
         renderer.setSafeArea(rect)
     }
@@ -96,12 +105,13 @@ class CarSurfaceRenderer(
             val hit = renderer.hitTest(x, y) ?: return@post
             when (hit.target) {
                 TileRenderer.Target.THEME -> {
-                    ThemeStore.next()
+                    renderer.show(TileId.HOME)
                     draw()
                 }
 
                 TileRenderer.Target.THEME_CHIP -> {
                     ThemeStore.select(hit.index)
+                    refreshBackground()
                     draw()
                 }
 
@@ -156,6 +166,10 @@ class CarSurfaceRenderer(
                 else -> Unit
             }
         }
+    }
+
+    private fun refreshBackground() {
+        renderer.setBackground(AppBackground.load(appContext, ThemeStore.current()))
     }
 
     private fun toggle(tile: TileId) {

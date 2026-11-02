@@ -30,7 +30,7 @@ Built and checked on this machine:
   content stage. Tap a rail tile to engage it. Media has an in-app play/pause
   control; the stage `OPEN` button launches the real app.
 - Android Auto 0.1.1 was verified on the owner's real Kia Android Auto screen
-  over USB using Play Internal App Sharing. The 0.1.4 real-map/sizing build is
+  over USB using Play Internal App Sharing. The 0.1.5 real-map/sizing build is
   pending a car pass; the phone launcher has been used for map and layout checks.
 - The Desktop Head Unit was attempted, but the emulator image's Android Auto
   app is a Play Store stub and the image has no Play Store.
@@ -106,7 +106,10 @@ tile again to minimize. The stage has an `OPEN` action for real apps:
 | Home | clock, theme chips, setup | Android Settings |
 
 Back from the launched app returns to the launcher. The top-right `THEME`
-button cycles Tokyo Night, Osaka Jade, Gruvbox, and Catppuccin.
+button opens the Home theme picker with ten themes: Tokyo Night, Osaka Jade,
+Gruvbox, Catppuccin, Kanagawa, Everforest, Nord, Ethereal, Ristretto, and
+Hackerman. Each theme loads its matching Omarchy background; the Tokyo Night
+background can be overridden by the private local Tokyo Studio image.
 
 ### Roadster background
 
@@ -144,7 +147,7 @@ without a public listing or review, and accepts a debug APK or signed AAB.
 
 1. In Play Console, create an app with package name `com.omarchy.auto`.
 2. **Test and release → Internal app sharing**, upload
-   `release/omarchy-auto-0.1.4-aa-release.aab`.
+   `release/omarchy-auto-0.1.5-aa-release.aab`.
 3. Copy the sharing link. A Play-installed 0.1.1 can update in place; if the
    phone has an ADB-signed copy, uninstall it first, then open the link and
    install from Play.
@@ -155,7 +158,7 @@ without a public listing or review, and accepts a debug APK or signed AAB.
    build.
 
 Internal App Sharing re-signs the upload. This is still a private test app; it
-is not a public release. The 0.1.4 AAB includes MapLibre native libraries and,
+is not a public release. The 0.1.5 AAB includes MapLibre native libraries and,
 when built with `-Pomarchy.includeLocalAssets=true`, the local-only wallpaper.
 
 The car app uses the Car App Library **NAVIGATION** category. It draws the five
@@ -207,7 +210,7 @@ that future path.
 | Area | Status |
 |---|---|
 | Five-tile layout, cut-out legends, mono type, 2px borders | Yes, shared renderer |
-| Themes | 4 palettes; phone verified, AA action strip implemented |
+| Themes | 10 Omarchy palettes + matching backgrounds; phone switch verified |
 | Clock | Live, every second |
 | Media | Live MediaSession metadata/art/progress in launcher; AA app wired, not host-tested |
 | Notifications | Live listener + existing-notification load; launcher verified |
@@ -216,7 +219,7 @@ that future path.
 | Right rail + large stage | Verified on emulator and phone |
 | Rotation | Portrait/landscape reflow verified on the S24 FE |
 | Media play/pause/previous/next | Wired to MediaTransport; car pass pending |
-| AA NavigationTemplate + SurfaceCallback | Verified on real AA (0.1.1); 0.1.4 map/sizing pending |
+| AA NavigationTemplate + SurfaceCallback | Verified on real AA (0.1.1); 0.1.5 map/sizing pending |
 | Real map | OpenFreeMap dark style via MapLibre snapshots + live location puck; phone verified, car pending |
 | Notification detail | Full-screen card overlay; phone preview verified |
 | Phone stage OPEN + Back | Verified with YouTube Music/Maps path |
@@ -234,7 +237,7 @@ that future path.
   plus existing notifications after listener reconnect.
 - Tile-to-YouTube-Music and Back-to-launcher verified.
 - GPS provider returned a fix; speed read zero while stationary.
-- Android Auto host: 0.1.1 verified on the owner's real Kia screen. The 0.1.4
+- Android Auto host: 0.1.1 verified on the owner's real Kia screen. The 0.1.5
   real-map and larger-type build still needs the same car pass.
 - Real map: MapLibre snapshot of `https://tiles.openfreemap.org/styles/dark`
   with a live location puck and OpenStreetMap/OpenFreeMap attribution. No
@@ -242,11 +245,11 @@ that future path.
 
 ## Limitations
 
-- The 0.1.4 real-map and larger-type build still needs a real-car acceptance
+- The 0.1.5 real-map and larger-type build still needs a real-car acceptance
   pass. 0.1.1 was verified there.
 - Sideloaded Car App Library availability is subject to Google's host policy;
   use Play Internal App Sharing for the trusted install.
-- The AA action strip was visible in the 0.1.1 car test; 0.1.4 surface hit
+- The AA action strip was visible in the 0.1.1 car test; 0.1.5 surface hit
   testing still needs confirmation.
 - Media controls send play/pause, previous, and next through MediaController.
 - Notifications are not yet allow-listed; OTP/2FA filtering is future work.
@@ -258,6 +261,7 @@ that future path.
 
 ## License
 
-TBD. AndroidX/Car App Library is Apache-2.0. Omarchy themes are MIT. The
+TBD. AndroidX/Car App Library is Apache-2.0. Omarchy theme code/palettes are
+MIT; individual background images may have separate rights. The
 Roadster wallpaper is **not** covered by that licence and is not committed; see
 `docs/ASSETS.md`. See `docs/REFERENCES.md`.

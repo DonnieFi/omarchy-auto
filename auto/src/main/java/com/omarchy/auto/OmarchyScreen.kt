@@ -18,7 +18,6 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import com.omarchy.auto.core.DashboardState
 import com.omarchy.auto.core.LiveDataStore
-import com.omarchy.auto.core.ThemeStore
 
 class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
 
@@ -70,8 +69,7 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
             ).build(),
         )
         .setOnClickListener {
-            ThemeStore.next()
-            surfaceRenderer?.requestDraw()
+            surfaceRenderer?.openThemePicker()
         }
         .build()
 

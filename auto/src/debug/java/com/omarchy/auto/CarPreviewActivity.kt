@@ -11,6 +11,7 @@ import com.omarchy.auto.core.AppBackground
 import com.omarchy.auto.core.DashboardState
 import com.omarchy.auto.core.MediaSnapshot
 import com.omarchy.auto.core.NotificationItem
+import com.omarchy.auto.core.Themes
 import com.omarchy.auto.core.TileId
 import com.omarchy.auto.core.TileRenderer
 import java.io.File
@@ -40,7 +41,7 @@ class CarPreviewActivity : Activity() {
     private fun renderPreviews() {
         val output = getExternalFilesDir("preview") ?: filesDir
         output.mkdirs()
-        val wallpaper = AppBackground.load(this)
+        val wallpaper = AppBackground.load(this, Themes.at(0))
         val state = previewState()
         val states = listOf(
             "idle" to null,
@@ -57,6 +58,10 @@ class CarPreviewActivity : Activity() {
         for ((name, tile) in listOf("comms" to TileId.COMMS, "home" to TileId.HOME, "media" to TileId.MEDIA)) {
             render(wallpaper, state, output, "car-800-$name.png", tile, overlayKey = null, width = 800, height = 480)
         }
+        Themes.all.forEachIndexed { index, theme ->
+            val themeWallpaper = AppBackground.load(this, theme)
+            render(themeWallpaper, state, output, "theme-${theme.id}.png", null, overlayKey = null, themeIndex = index)
+        }
     }
 
     private fun render(
@@ -68,6 +73,7 @@ class CarPreviewActivity : Activity() {
         overlayKey: String?,
         width: Int = WIDTH,
         height: Int = HEIGHT,
+        themeIndex: Int = 0,
     ) {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -79,7 +85,7 @@ class CarPreviewActivity : Activity() {
             width = width,
             height = height,
             state = state,
-            themeIndex = 0,
+            themeIndex = themeIndex,
             mode = TileRenderer.Mode.CAR,
         )
         previewLabel(canvas)

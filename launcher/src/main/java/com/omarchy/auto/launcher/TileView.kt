@@ -42,7 +42,7 @@ class TileView @JvmOverloads constructor(
         isFocusable = true
         contentDescription = "Omarchy Auto launcher"
         setBackgroundColor(ThemeStore.current().background)
-        renderer.setBackground(AppBackground.load(context))
+        refreshBackground()
     }
 
     override fun onAttachedToWindow() {
@@ -76,14 +76,14 @@ class TileView @JvmOverloads constructor(
                 val hit = renderer.hitTest(event.x, event.y) ?: return true
                 when (hit.target) {
                     TileRenderer.Target.THEME -> {
-                        ThemeStore.next()
-                        setBackgroundColor(ThemeStore.current().background)
+                        renderer.show(TileId.HOME)
                         invalidate()
                     }
 
                     TileRenderer.Target.THEME_CHIP -> {
                         ThemeStore.select(hit.index)
                         setBackgroundColor(ThemeStore.current().background)
+                        refreshBackground()
                         invalidate()
                     }
 
@@ -143,6 +143,10 @@ class TileView @JvmOverloads constructor(
             }
         }
         return super.onTouchEvent(event)
+    }
+
+    private fun refreshBackground() {
+        renderer.setBackground(AppBackground.load(context, ThemeStore.current()))
     }
 
     private fun toggle(tile: TileId) {

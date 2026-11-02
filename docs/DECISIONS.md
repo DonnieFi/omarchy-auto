@@ -233,3 +233,27 @@ screenshot uses the fallback.
 **Consequences:** The private demo can show the exact Roadster image on the
 owner's phone without redistributing it. Before public launch, either clear the
 media rights or keep the original fallback. See `docs/ASSETS.md`.
+
+## ADR-0012 — Ten Omarchy themes with theme-matched backgrounds
+
+**Status:** accepted (2026-11-01 theme expansion)
+
+**Context:** The first build had four palettes and one fixed wallpaper. The
+owner asked for more Omarchy themes and for the background to change with the
+theme. A UI/UX review recommended dark, low-glare themes, stronger secondary-text
+contrast, and a deliberate chooser instead of cycling through many themes.
+
+**Decision:** Ship ten themes: Tokyo Night, Osaka Jade (Jade Horse palette),
+Gruvbox, Catppuccin, Kanagawa, Everforest, Nord, Ethereal, Ristretto, and
+Hackerman. Each has a matching 1600x900 WebP background resized from the
+Omarchy theme tree. Tokyo Night keeps the private local Tokyo Studio override
+when present. The top-bar THEME button and the Android Auto action-strip Theme
+action open the Home theme grid rather than cycling. Theme selection persists
+by id, and the Home picker is a 5x2 grid. Scrim and stage opacity are per-theme;
+secondary text uses contrast-adjusted `dim` values.
+
+**Consequences:** The app is 1.2 MB larger from committed background assets and
+the theme picker is denser than the old four-chip row. Omarchy's theme code is
+MIT, but individual background images may have separate rights; they stay a
+private demo until each source is cleared. A future picker overlay should add
+larger theme cards and 48dp touch targets for compact displays.
