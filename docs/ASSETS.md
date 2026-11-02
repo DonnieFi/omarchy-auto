@@ -1,31 +1,33 @@
 # Assets and attribution
 
-## Supplied Tokyo Studio / “Tokyo Knight” wallpaper
+## Tokyo Studio / “Tokyo Knight” artwork
 
-The app can load the supplied Tom Ballard **Tokyo Studio** image (the owner calls
-it the Tokyo Knight background) locally. It is not committed to this repository.
+The README hero and the private Tokyo Night build use **Tom Ballard’s Tokyo
+Studio** artwork (the owner calls it the Tokyo Knight background).
 
 Upstream source: [tcballard/omarchy-theme-tokyo-roadster](https://github.com/tcballard/omarchy-theme-tokyo-roadster),
 theme code MIT, Copyright (c) 2026 Tom Ballard. The repository's
 [CREDITS.md](https://github.com/tcballard/omarchy-theme-tokyo-roadster/blob/main/CREDITS.md)
 states that the Roadster photographs/artworks are user-supplied and that the
 original photographer, source URL, and media redistribution licence were not
-established. The theme's MIT licence covers configuration/code, not the images.
+separately established. The theme's MIT licence covers configuration/code, not
+the artwork.
 
-For that reason:
+Use and credit:
 
-- `local-assets/` is ignored by git.
-- The clean-clone build uses an original, code-drawn neon-road fallback.
-- A private demo can place a licensed copy at `local-assets/wallpaper.jpg` and
-  explicitly opt in with `-Pomarchy.includeLocalAssets=true`; that APK/AAB embeds
-  it as `assets/wallpaper.jpg`.
-- Default builds — including release builds without the explicit flag — exclude
-  `local-assets/` and use the fallback.
-- The app also looks for `roadster.jpg` in its private files directory.
-- Do not publish builds, screenshots, or mirrors containing the Roadster image
-  until the media rights are cleared.
+- `docs/img/hero-tokyo-night.webp` is committed for the README and public site,
+  credited to Tom Ballard in [`CREDITS.md`](../CREDITS.md).
+- `local-assets/` remains ignored by git. A private app build can embed the
+  owner's copy with `-Pomarchy.includeLocalAssets=true`.
+- Default/public app builds exclude `local-assets/` and use the Omarchy theme
+  backgrounds or the code-drawn fallback.
+- The project [MIT licence](../LICENSE) covers project code and original assets,
+  not third-party artwork.
+- Verify the artwork's media rights before commercial redistribution. If the
+  rights holder asks, remove the README/site hero and the local app asset.
 
-The screenshot in the README was taken with the **fallback** background.
+The README hero now uses Tokyo Studio with credit; other app previews use
+public-safe Omarchy backgrounds or the fallback.
 
 ## Theme palettes and backgrounds
 

@@ -7,12 +7,12 @@ The same Kotlin Canvas renderer powers a full-screen phone launcher.
 
 **Public pre-alpha site:** [omarchyauto.com](https://omarchyauto.com)
 
-![Omarchy Auto phone launcher at 1280×720](docs/img/launcher-1280x720.png)
+![Omarchy Auto five-tile UI over Tom Ballard's Tokyo Studio artwork](docs/img/hero-tokyo-night.webp)
 
-*Phone launcher at 1280×720, opening with every tile minimized. This is the
-clean-clone fallback background. The local phone build uses the supplied Tom
-Ballard Tokyo Studio image via `local-assets/` (not committed); the visible test
-metadata is not Android Auto footage.*
+*Omarchy Auto with Tom Ballard's Tokyo Studio artwork, credited in
+[`CREDITS.md`](CREDITS.md). Synthetic layout render, not real-car footage.
+Project code is MIT-licensed; the artwork is third-party and credited
+separately.*
 
 ## Status — v0.1 redirect (2026-11-01)
 
@@ -260,14 +260,16 @@ that future path.
 - Media controls send play/pause, previous, and next through MediaController.
 - Notifications are not yet allow-listed; OTP/2FA filtering is future work.
 - Vehicle data is mock until OBD-II; Torque is not wired up.
-- The exact Roadster wallpaper is local-only; the repo ships only the original
-  fallback background until its media rights are resolved.
-- No Play Store submission, no production signing, no release build.
+- The Tokyo Studio artwork is included in the README with credit to Tom Ballard;
+  app public builds still exclude it unless the private local-assets flag is
+  used. Verify the artwork's media rights before public redistribution.
+- No public Play listing, store review, or production launch; private Internal
+  App Sharing only.
 - Linux/Quickshell remains future work; it is not in the APKs.
 
 ## License
 
-TBD. AndroidX/Car App Library is Apache-2.0. Omarchy theme code/palettes are
-MIT; individual background images may have separate rights. The
-Roadster wallpaper is **not** covered by that licence and is not committed; see
-`docs/ASSETS.md`. See `docs/REFERENCES.md`.
+Project code and original assets are released under the [MIT License](LICENSE).
+See [`CREDITS.md`](CREDITS.md) for Tom Ballard's Tokyo Studio artwork, Omarchy
+theme credits, and third-party asset notes. The MIT license does not relicense
+third-party artwork. AndroidX / Car App Library is Apache-2.0.
