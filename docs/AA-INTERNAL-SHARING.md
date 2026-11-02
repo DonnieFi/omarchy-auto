@@ -11,7 +11,7 @@ You are taking over the existing Omarchy Auto Android project. Do not rewrite th
 
 > **Current private build (2026-11-01):** versionCode 5 / 0.1.4, signed AAB at
 > `release/omarchy-auto-0.1.4-aa-release.aab` (SHA-256
-> `c2db95c672a2165c6959591626ce93886ea7f33d63603b91217265dff400bafa`).
+> `fec6102a8e3a682c86be7355747b91e7d91f51ddb263d1bbc9c0f93aefc11bc5`).
 > 0.1.1 was already installed through Internal App Sharing and verified on the
 > owner's Kia; upload this 0.1.4 AAB to update it. The debug-APK steps below are
 > retained as fallback history.

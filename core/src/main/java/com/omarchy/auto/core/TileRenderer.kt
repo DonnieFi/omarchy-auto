@@ -111,6 +111,10 @@ class TileRenderer {
         typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
     }
     private val route = Path()
+    private var fallbackShader: Shader? = null
+    private var fallbackShaderKey: Long = 0L
+    private var vignetteShader: Shader? = null
+    private var vignetteShaderKey: Long = 0L
     private val wallpaperMatrix = Matrix()
     private val wallpaperPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
     private val clockFormat = SimpleDateFormat("HH:mm", Locale.US)
@@ -332,51 +336,65 @@ class TileRenderer {
             fill.color = Color.argb(96, 8, 10, 24)
             canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fill)
         } else {
+            val key = (width.toLong() shl 32) xor height.toLong()
+            if (fallbackShader == null || fallbackShaderKey != key) {
+                fallbackShader = LinearGradient(
+                    0f, 0f, width.toFloat(), height.toFloat(),
+                    intArrayOf(
+                        0xFF05060F.toInt(),
+                        0xFF101A2E.toInt(),
+                        0xFF1A1B26.toInt(),
+                    ),
+                    null,
+                    Shader.TileMode.CLAMP,
+                )
+                fallbackShaderKey = key
+            }
             fill.style = Paint.Style.FILL
-            fill.shader = LinearGradient(
-                0f, 0f, width.toFloat(), height.toFloat(),
-                intArrayOf(
-                    0xFF05060F.toInt(),
-                    0xFF101A2E.toInt(),
-                    0xFF1A1B26.toInt(),
-                ),
-                null,
-                Shader.TileMode.CLAMP,
-            )
+            fill.shader = fallbackShader
             canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fill)
             fill.shader = null
 
             // Original fallback: a neon curve and a low roadster silhouette.
-            val road = Path().apply {
-                moveTo(area.left - area.width() * 0.05f, area.bottom * 0.72f)
-                cubicTo(
-                    area.width() * 0.25f, area.height() * 0.48f,
-                    area.width() * 0.62f, area.height() * 0.74f,
-                    area.right + area.width() * 0.08f, area.height() * 0.38f,
-                )
-            }
+            route.reset()
+            route.moveTo(area.left - area.width() * 0.05f, area.bottom * 0.72f)
+            route.cubicTo(
+                area.width() * 0.25f, area.height() * 0.48f,
+                area.width() * 0.62f, area.height() * 0.74f,
+                area.right + area.width() * 0.08f, area.height() * 0.38f,
+            )
             stroke.style = Paint.Style.STROKE
             stroke.strokeCap = Paint.Cap.ROUND
             stroke.strokeWidth = 58f * unit
             stroke.color = Color.argb(120, 28, 32, 58)
-            canvas.drawPath(road, stroke)
+            canvas.drawPath(route, stroke)
             stroke.strokeWidth = 4f * unit
             stroke.color = Color.argb(190, 122, 162, 247)
-            canvas.drawPath(road, stroke)
+            canvas.drawPath(route, stroke)
             stroke.strokeWidth = 2f * unit
             stroke.color = Color.argb(120, 187, 154, 247)
-            canvas.drawPath(road, stroke)
+            canvas.drawPath(route, stroke)
 
-            val car = RectF(
-                area.left + area.width() * 0.42f,
-                area.height() * 0.48f,
-                area.left + area.width() * 0.56f,
-                area.height() * 0.54f,
-            )
+            val cx = area.left + area.width() * 0.49f
+            val cy = area.height() * 0.52f
+            val carWidth = area.width() * 0.16f
+            val carHeight = area.height() * 0.055f
+            route.reset()
+            route.moveTo(cx - carWidth * 0.5f, cy)
+            route.lineTo(cx - carWidth * 0.36f, cy - carHeight * 0.5f)
+            route.lineTo(cx - carWidth * 0.16f, cy - carHeight * 0.85f)
+            route.lineTo(cx + carWidth * 0.18f, cy - carHeight * 0.85f)
+            route.lineTo(cx + carWidth * 0.38f, cy - carHeight * 0.5f)
+            route.lineTo(cx + carWidth * 0.5f, cy)
+            route.close()
+            fill.style = Paint.Style.FILL
             fill.color = Color.argb(195, 225, 232, 255)
-            canvas.drawRoundRect(car, 10f * unit, 10f * unit, fill)
+            canvas.drawPath(route, fill)
+            fill.color = Color.argb(210, 18, 22, 38)
+            canvas.drawCircle(cx - carWidth * 0.28f, cy, carHeight * 0.32f, fill)
+            canvas.drawCircle(cx + carWidth * 0.28f, cy, carHeight * 0.32f, fill)
             fill.color = Color.argb(220, 122, 162, 247)
-            canvas.drawRect(car.left + 7f * unit, car.top + 4f * unit, car.right - 7f * unit, car.top + 8f * unit, fill)
+            canvas.drawRect(cx - carWidth * 0.30f, cy - carHeight * 0.92f, cx + carWidth * 0.30f, cy - carHeight * 0.78f, fill)
 
             fill.color = Color.argb(10, 255, 255, 255)
             val step = 44f * unit
@@ -392,18 +410,23 @@ class TileRenderer {
             }
         }
 
-        fill.shader = LinearGradient(
-            0f, area.top, 0f, area.bottom,
-            intArrayOf(
-                Color.argb(190, 8, 10, 24),
-                Color.argb(36, 8, 10, 24),
-                Color.argb(190, 8, 10, 24),
-            ),
-            floatArrayOf(0f, 0.45f, 1f),
-            Shader.TileMode.CLAMP,
-        )
+        val vignetteKey = height.toLong()
+        if (vignetteShader == null || vignetteShaderKey != vignetteKey) {
+            vignetteShader = LinearGradient(
+                0f, 0f, 0f, height.toFloat(),
+                intArrayOf(
+                    Color.argb(190, 8, 10, 24),
+                    Color.argb(36, 8, 10, 24),
+                    Color.argb(190, 8, 10, 24),
+                ),
+                floatArrayOf(0f, 0.45f, 1f),
+                Shader.TileMode.CLAMP,
+            )
+            vignetteShaderKey = vignetteKey
+        }
         fill.style = Paint.Style.FILL
-        canvas.drawRect(area, fill)
+        fill.shader = vignetteShader
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fill)
         fill.shader = null
     }
 
@@ -847,14 +870,13 @@ class TileRenderer {
             stroke.strokeWidth = 2f * unit
             stroke.color = theme.foreground
             canvas.drawCircle(cx, cy, 11f * unit, stroke)
-            val heading = Path().apply {
-                moveTo(cx, cy - 19f * unit)
-                lineTo(cx - 5f * unit, cy - 10f * unit)
-                lineTo(cx + 5f * unit, cy - 10f * unit)
-                close()
-            }
+            route.reset()
+            route.moveTo(cx, cy - 19f * unit)
+            route.lineTo(cx - 5f * unit, cy - 10f * unit)
+            route.lineTo(cx + 5f * unit, cy - 10f * unit)
+            route.close()
             fill.color = theme.foreground
-            canvas.drawPath(heading, fill)
+            canvas.drawPath(route, fill)
         }
 
         val panel = RectF(
@@ -1055,22 +1077,20 @@ class TileRenderer {
         fill.color = theme.accent
         if (previous) {
             canvas.drawRect(cx - 14f * unit, cy - half, cx - 10f * unit, cy + half, fill)
-            val path = Path().apply {
-                moveTo(cx - inset, cy)
-                lineTo(cx + inset, cy - half)
-                lineTo(cx + inset, cy + half)
-                close()
-            }
-            canvas.drawPath(path, fill)
+            route.reset()
+            route.moveTo(cx - inset, cy)
+            route.lineTo(cx + inset, cy - half)
+            route.lineTo(cx + inset, cy + half)
+            route.close()
+            canvas.drawPath(route, fill)
         } else {
             canvas.drawRect(cx + 10f * unit, cy - half, cx + 14f * unit, cy + half, fill)
-            val path = Path().apply {
-                moveTo(cx + inset, cy)
-                lineTo(cx - inset, cy - half)
-                lineTo(cx - inset, cy + half)
-                close()
-            }
-            canvas.drawPath(path, fill)
+            route.reset()
+            route.moveTo(cx + inset, cy)
+            route.lineTo(cx - inset, cy - half)
+            route.lineTo(cx - inset, cy + half)
+            route.close()
+            canvas.drawPath(route, fill)
         }
     }
 
@@ -1093,13 +1113,13 @@ class TileRenderer {
             canvas.drawRect(cx - 15f * unit, cy - barH / 2, cx - 15f * unit + barW, cy + barH / 2, fill)
             canvas.drawRect(cx + 6f * unit, cy - barH / 2, cx + 6f * unit + barW, cy + barH / 2, fill)
         } else {
-            val path = Path()
-            path.moveTo(cx - 11f * unit, cy - 16f * unit)
-            path.lineTo(cx + 17f * unit, cy)
-            path.lineTo(cx - 11f * unit, cy + 16f * unit)
-            path.close()
+            route.reset()
+            route.moveTo(cx - 11f * unit, cy - 16f * unit)
+            route.lineTo(cx + 17f * unit, cy)
+            route.lineTo(cx - 11f * unit, cy + 16f * unit)
+            route.close()
             fill.color = theme.background
-            canvas.drawPath(path, fill)
+            canvas.drawPath(route, fill)
         }
     }
 
