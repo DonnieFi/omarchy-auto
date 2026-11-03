@@ -1,0 +1,1 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application><activity android:name=".ReplayActivity" android:exported="true" android:label="Omarchy recorded route replay" /></application></manifest>
