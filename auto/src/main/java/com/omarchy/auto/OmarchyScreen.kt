@@ -8,8 +8,12 @@ import androidx.car.app.CarContext
 import androidx.car.app.Screen
 import androidx.car.app.SurfaceCallback
 import androidx.car.app.SurfaceContainer
+import androidx.car.app.model.Action
+import androidx.car.app.model.ActionStrip
+import androidx.car.app.model.CarIcon
 import androidx.car.app.model.Template
 import androidx.car.app.navigation.model.NavigationTemplate
+import androidx.core.graphics.drawable.IconCompat
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import com.omarchy.auto.core.DashboardState
@@ -57,6 +61,15 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
         }
     }
 
+    private val settingsAction: Action = Action.Builder()
+        .setIcon(
+            CarIcon.Builder(
+                IconCompat.createWithResource(carContext, R.drawable.ic_settings),
+            ).build(),
+        )
+        .setOnClickListener { surfaceRenderer?.openSettings() }
+        .build()
+
     init {
         try {
             carContext.getCarService(AppManager::class.java)
@@ -96,9 +109,12 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
     }
 
     override fun onGetTemplate(): Template {
-        // The canvas header owns the THEME control. Adding a host action-strip
-        // pill duplicates it over the header and can shrink the projected area.
-        return NavigationTemplate.Builder().build()
+        // NavigationTemplate.Builder.build() throws without an action strip.
+        // Keep it to one icon-only gear that opens the Home stage (setup and
+        // themes); the canvas header still owns THEME.
+        return NavigationTemplate.Builder()
+            .setActionStrip(ActionStrip.Builder().addAction(settingsAction).build())
+            .build()
     }
 
     companion object {

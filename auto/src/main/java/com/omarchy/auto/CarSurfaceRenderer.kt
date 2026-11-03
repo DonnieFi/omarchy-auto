@@ -91,7 +91,7 @@ class CarSurfaceRenderer(
         handler.post(immediateDraw)
     }
 
-    fun openThemePicker() {
+    fun openSettings() {
         if (stopped) return
         handler.post {
             if (stopped) return@post
