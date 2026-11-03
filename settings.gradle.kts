@@ -18,3 +18,5 @@ rootProject.name = "omarchy-auto"
 include(":core")
 include(":auto")
 include(":launcher")
+
+include(":navigation-spike")
