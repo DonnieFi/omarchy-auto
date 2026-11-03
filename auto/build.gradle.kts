@@ -16,6 +16,15 @@ val keystoreProps = Properties().apply {
 // Private/local wallpaper opt-in. Clean and public builds exclude local-assets
 // unless the private release is explicitly built with
 // -Pomarchy.includeLocalAssets=true.
+// Crash upload token, from -Pomarchy.crashToken, ~/.gradle/gradle.properties
+// or local.properties. Not committed. It ships inside the APK, so it is abuse
+// friction for the endpoint, not a secret.
+val crashToken = (findProperty("omarchy.crashToken") as String?)
+    ?: Properties().apply {
+        rootProject.file("local.properties").takeIf { it.isFile }?.inputStream()?.use { load(it) }
+    }.getProperty("omarchy.crashToken")
+    ?: ""
+
 val includeLocalAssets = (findProperty("omarchy.includeLocalAssets") as String?)
     ?.toBooleanStrictOrNull() ?: false
 
@@ -29,6 +38,11 @@ android {
         targetSdk = 36
         versionCode = 10
         versionName = "0.1.9"
+        buildConfigField("String", "CRASH_TOKEN", "\"${crashToken.replace("\"", "")}\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     if (keystoreProps.getProperty("storeFile") != null) {

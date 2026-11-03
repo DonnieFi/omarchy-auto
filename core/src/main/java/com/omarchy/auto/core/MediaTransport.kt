@@ -2,7 +2,7 @@ package com.omarchy.auto.core
 
 import android.media.session.MediaController
 import android.media.session.PlaybackState
-import android.util.Log
+import com.omarchy.auto.core.diag.OaLog
 
 /** Small command bridge for the stage play/pause control. */
 object MediaTransport {
@@ -33,7 +33,7 @@ object MediaTransport {
         try {
             block(current.transportControls)
         } catch (error: Exception) {
-            Log.w(TAG, "Media command failed", error)
+            OaLog.w(TAG, "Media command failed", error)
         }
     }
 }

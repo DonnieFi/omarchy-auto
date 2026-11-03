@@ -2,7 +2,7 @@ package com.omarchy.auto
 
 import android.content.Intent
 import android.graphics.Rect
-import android.util.Log
+import com.omarchy.auto.core.diag.OaLog
 import androidx.car.app.AppManager
 import androidx.car.app.CarContext
 import androidx.car.app.Screen
@@ -75,7 +75,7 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
             carContext.getCarService(AppManager::class.java)
                 .setSurfaceCallback(surfaceCallback)
         } catch (error: Exception) {
-            Log.w(TAG, "Surface access is unavailable", error)
+            OaLog.w(TAG, "Surface access is unavailable", error)
         }
         lifecycle.addObserver(
             object : DefaultLifecycleObserver {

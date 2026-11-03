@@ -6,7 +6,7 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
-import android.util.Log
+import com.omarchy.auto.core.diag.OaLog
 import androidx.car.app.CarAppService
 import androidx.car.app.Session
 import androidx.car.app.SessionInfo
@@ -111,7 +111,7 @@ class OmarchyCarAppService : CarAppService() {
         } catch (error: Exception) {
             // A blocked foreground start must not stop the car app; it only
             // makes background location less reliable.
-            Log.w(TAG, "Could not enter foreground mode", error)
+            OaLog.w(TAG, "Could not enter foreground mode", error)
         }
     }
 

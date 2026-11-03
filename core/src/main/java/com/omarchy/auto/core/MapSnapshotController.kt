@@ -5,7 +5,7 @@ import android.location.Location
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.util.Log
+import com.omarchy.auto.core.diag.OaLog
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.geometry.LatLng
@@ -45,7 +45,7 @@ class MapSnapshotController(context: Context) {
             MapLibre.getInstance(app)
         } catch (error: Exception) {
             MapSnapshotStore.setError("MapLibre init failed: ${error.message}")
-            Log.w(TAG, "MapLibre init failed", error)
+            OaLog.w(TAG, "MapLibre init failed", error)
             return
         }
         LiveDataStore.addListener(listener)
@@ -130,7 +130,7 @@ class MapSnapshotController(context: Context) {
                 },
             )
         } catch (error: Exception) {
-            Log.w(TAG, "Map snapshot failed", error)
+            OaLog.w(TAG, "Map snapshot failed", error)
             fail(error.message)
         }
     }

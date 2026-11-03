@@ -22,6 +22,8 @@ import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import com.omarchy.auto.core.diag.LogShare
+import com.omarchy.auto.core.diag.OaLog
 
 /**
  * One-screen setup for permissions. The AA service cannot show a runtime
@@ -44,6 +46,7 @@ class SetupActivity : Activity() {
         BackgroundStore.init(this)
         LaunchTargetStore.init(this)
         NotificationSettings.init(this)
+        OaLog.init(this)
         isLauncher = intent.getBooleanExtra(EXTRA_LAUNCHER, false)
         theme = ThemeStore.current()
         window.setBackgroundDrawable(ColorDrawable(theme.background))
@@ -118,6 +121,8 @@ class SetupActivity : Activity() {
         }
 
         column.addView(space(12))
+        column.addView(button("SEND LOGS") { LogShare.share(this) })
+        column.addView(space(10))
         notificationButton = button("NOTIFICATION TEXT · ${DisplaySettings.label()}") {
             DisplaySettings.cycle()
             refreshDisplayControls()

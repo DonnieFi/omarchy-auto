@@ -5,7 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Rect
 import android.os.Handler
 import android.os.HandlerThread
-import android.util.Log
+import com.omarchy.auto.core.diag.OaLog
 import android.view.Surface
 import com.omarchy.auto.core.AppBackground
 import com.omarchy.auto.core.BackgroundStore
@@ -224,13 +224,13 @@ class CarSurfaceRenderer(
                         )
                     }
                 } catch (error: Exception) {
-                    Log.w(TAG, "Surface draw failed", error)
+                    OaLog.w(TAG, "Surface draw failed", error)
                 } finally {
                     if (canvas != null) {
                         try {
                             surface.unlockCanvasAndPost(canvas)
                         } catch (error: Exception) {
-                            Log.w(TAG, "Surface post failed", error)
+                            OaLog.w(TAG, "Surface post failed", error)
                         }
                     }
                 }
@@ -246,7 +246,7 @@ class CarSurfaceRenderer(
         try {
             surface.release()
         } catch (error: Exception) {
-            Log.w(TAG, "Surface release failed", error)
+            OaLog.w(TAG, "Surface release failed", error)
         }
     }
 
