@@ -181,6 +181,7 @@ class TileRenderer {
         if (!FeatureFlags.SHOW_VEHICLE_TILE && selected == TileId.VEHICLE) {
             selected = null
         }
+        val wasMapActive = MapViewport.active
         MapViewport.active = selected == TileId.DRIVE
         val landscape = area.width() > area.height() * 1.25f
         val rawUnit = if (landscape) {
@@ -261,6 +262,12 @@ class TileRenderer {
         if (overlayKey != null && overlay == null) overlayKey = null
         val overlayHit = overlay?.let {
             drawNotificationOverlay(canvas, area, theme, it, unit, mode)
+        }
+
+        if (wasMapActive != MapViewport.active) {
+            // The map controller is state-driven; wake it when the Drive stage
+            // becomes active even if GPS has not produced a new fix yet.
+            LiveDataStore.notifyDisplayChanged()
         }
 
         lastLayout = Layout(
@@ -846,6 +853,37 @@ class TileRenderer {
         x = status(canvas, x + 16f * textUnit, baseline, "NOTIF", state.notificationAccess, theme, textUnit)
         x = status(canvas, x + 16f * textUnit, baseline, "GPS", state.locationAccess, theme, textUnit)
 
+        val batteryPercent = state.batteryPercent
+        val batteryText = batteryPercent?.let { "$it%" }
+        val batteryTextSize = 8.5f * textUnit
+        val batteryIconWidth = 13f * textUnit
+        val batteryGap = 4f * textUnit
+        val batteryTextWidth = batteryText?.let { measure(it, batteryTextSize) } ?: 0f
+        val batteryWidth = if (batteryText != null) {
+            batteryIconWidth + batteryGap + batteryTextWidth
+        } else {
+            0f
+        }
+        val batteryRight = area.right - 16f * textUnit
+        val batteryLeft = batteryRight - batteryWidth
+        if (batteryPercent != null) {
+            drawBattery(
+                canvas = canvas,
+                left = batteryLeft,
+                baseline = baseline,
+                percent = batteryPercent,
+                charging = state.batteryCharging,
+                theme = theme,
+                textUnit = textUnit,
+            )
+            text(
+                canvas, batteryText.orEmpty(),
+                batteryLeft + batteryIconWidth + batteryGap,
+                baseline, batteryTextSize,
+                if (state.batteryCharging) theme.accent else theme.dim,
+            )
+        }
+
         val mock = if (FeatureFlags.SHOW_VEHICLE_TILE) {
             if (state.vehicleMock) "MOCK VEHICLE" else "OBD LIVE"
         } else {
@@ -853,13 +891,18 @@ class TileRenderer {
         }
         val mockSize = 9f * textUnit
         val mockWidth = mock?.let { measure(it, mockSize) } ?: 0f
+        val mockRight = if (batteryPercent != null) {
+            batteryLeft - 16f * textUnit
+        } else {
+            batteryRight
+        }
         if (mock != null) {
             text(
-                canvas, mock, area.right - 16f * textUnit - mockWidth,
+                canvas, mock, mockRight - mockWidth,
                 baseline, mockSize, if (state.vehicleMock) theme.yellow else theme.green,
             )
         }
-        val speedRight = area.right - 16f * textUnit -
+        val speedRight = mockRight -
             (if (mock != null) mockWidth + 16f * textUnit else 0f)
 
         val media = state.media
@@ -900,6 +943,58 @@ class TileRenderer {
                 baseline, speedSize, theme.accent, bold = true,
             )
         }
+    }
+
+    private fun drawBattery(
+        canvas: Canvas,
+        left: Float,
+        baseline: Float,
+        percent: Int,
+        charging: Boolean,
+        theme: OmarchyTheme,
+        textUnit: Float,
+    ) {
+        val width = 13f * textUnit
+        val height = 6.5f * textUnit
+        val top = baseline - height - 1f * textUnit
+        val body = RectF(left, top, left + width, top + height)
+        val nub = RectF(
+            body.right,
+            body.top + height * 0.28f,
+            body.right + 2f * textUnit,
+            body.bottom - height * 0.28f,
+        )
+        fill.style = Paint.Style.FILL
+        fill.color = theme.border
+        canvas.drawRoundRect(body, 1.5f * textUnit, 1.5f * textUnit, fill)
+        val inner = RectF(
+            body.left + 1.5f * textUnit,
+            body.top + 1.5f * textUnit,
+            body.right - 1.5f * textUnit,
+            body.bottom - 1.5f * textUnit,
+        )
+        val fraction = (percent / 100f).coerceIn(0f, 1f)
+        fill.color = when {
+            charging -> theme.accent
+            percent <= 15 -> theme.red
+            percent <= 30 -> theme.yellow
+            else -> theme.green
+        }
+        canvas.save()
+        canvas.clipRect(
+            inner.left,
+            inner.bottom - inner.height() * fraction,
+            inner.right,
+            inner.bottom,
+        )
+        canvas.drawRect(inner, fill)
+        canvas.restore()
+        fill.color = theme.border
+        canvas.drawRect(nub, fill)
+        stroke.style = Paint.Style.STROKE
+        stroke.strokeWidth = 1f * textUnit
+        stroke.color = theme.dim
+        canvas.drawRoundRect(body, 1.5f * textUnit, 1.5f * textUnit, stroke)
     }
 
     private fun status(

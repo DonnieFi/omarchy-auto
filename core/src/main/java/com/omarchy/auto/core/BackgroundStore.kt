@@ -22,6 +22,9 @@ object BackgroundStore {
         "wallpaper.png",
         "roadster.jpg",
         "roadster.png",
+        // The tracked Tokyo Night theme image is Tom Ballard's Tokyo Studio
+        // artwork, so "USE TOM BACKGROUND" works in public builds too.
+        "themes/tokyo-night.webp",
     )
 
     private var prefs: SharedPreferences? = null

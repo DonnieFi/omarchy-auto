@@ -36,8 +36,8 @@ In:
 - Live GPS speed from LocationManager.
 - Vehicle tile stays mock with a visible `MOCK` label until OBD-II; Torque is
   intentionally not wired up yet.
-- Supplied Tom Ballard Tokyo Studio (“Tokyo Knight”) wallpaper from a local,
-  uncommitted asset; clean builds use an original neon-road fallback.
+- Tom Ballard Tokyo Studio (“Tokyo Knight”) wallpaper tracked as the Tokyo
+  Night theme background with Tom’s open-source permission (2026-11-02).
 - Debug-signed APKs from one documented command.
 
 Out:
@@ -158,7 +158,7 @@ useful history.
 - [x] Phone launcher runs, theme switch works, live MediaSession and
       notifications work, GPS fix obtained, tile launch/back works.
 - [x] Real Android Auto car screen over USB (0.1.1, owner's Kia, 2026-11-01).
-- [x] Real AA Media/comms surface seen in the car video; 0.1.7 real-map/sizing pass is the remaining check.
+- [x] Real AA Media/comms surface seen in the car video; 0.1.8 real-map/sizing pass is the remaining check.
 - [x] 1280×720 capture in `docs/img/` (phone launcher, fallback background, clearly labeled).
 - [x] Vehicle mock visibly labeled.
 
@@ -175,9 +175,9 @@ useful history.
   must not log message bodies and should add an allow-list.
 - **Scope.** One DPI/layout target (1280×720 landscape) is the demo; portrait
   phone layout is a secondary target.
-- **Wallpaper rights.** The exact supplied Tokyo Studio artwork is local-only
-  until its upstream media rights are cleared. Do not publish a build/screenshot
-  with it.
+- **Wallpaper rights.** Tom Ballard approved the Tokyo Studio artwork for
+  open-source distribution on 2026-11-02. Other Omarchy-derived backgrounds
+  still need per-image checks before public release.
 
 ## Open questions
 

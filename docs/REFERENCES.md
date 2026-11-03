@@ -93,7 +93,7 @@ aarch64 support.
 - [tcballard/omarchy-theme-tokyo-roadster](https://github.com/tcballard/omarchy-theme-tokyo-roadster) —
   theme code MIT, Copyright (c) 2026 Tom Ballard. The attached
   [CREDITS](https://github.com/tcballard/omarchy-theme-tokyo-roadster/blob/main/CREDITS.md)
-  says the Roadster photographs/artworks are user-supplied and the original
-  photographer, source URL, and media redistribution licence were not
-  established. The image is therefore local-only and not committed; see
-  `docs/ASSETS.md`.
+  notes that the original photographs were user-supplied. Tom Ballard confirmed
+  open-source distribution of the Tokyo Studio artwork on 2026-11-02; it is
+  tracked as `core/src/main/assets/themes/tokyo-night.webp` and used in the
+  README/public site. See `docs/ASSETS.md`.

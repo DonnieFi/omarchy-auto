@@ -15,6 +15,7 @@ import android.view.WindowManager
 import android.widget.Toast
 import com.omarchy.auto.core.BackgroundStore
 import com.omarchy.auto.core.DisplaySettings
+import com.omarchy.auto.core.LaunchTargetStore
 import com.omarchy.auto.core.LiveDataController
 import com.omarchy.auto.core.SetupActivity
 import com.omarchy.auto.core.ThemeStore
@@ -29,6 +30,7 @@ class MainActivity : Activity() {
         ThemeStore.init(this)
         DisplaySettings.init(this)
         BackgroundStore.init(this)
+        LaunchTargetStore.init(this)
         controller = LiveDataController(this)
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -94,10 +96,10 @@ class MainActivity : Activity() {
                 Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=")),
             )
 
-            TileId.MEDIA -> open(
-                listOf("com.spotify.music", "com.google.android.apps.youtube.music"),
-                null,
-            )
+            TileId.MEDIA -> {
+                val target = LaunchTargetStore.selected(this)
+                open(target.packages, null, target.installHint)
+            }
 
             TileId.COMMS -> open(
                 emptyList(),
@@ -115,7 +117,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun open(packages: List<String>, fallback: Intent?) {
+    private fun open(packages: List<String>, fallback: Intent?, installHint: String? = null) {
         for (pkg in packages) {
             val intent = packageManager.getLaunchIntentForPackage(pkg)
             if (intent != null && startSafely(intent)) return
@@ -125,8 +127,7 @@ class MainActivity : Activity() {
         ) {
             return
         }
-        val label = when {
-            packages.contains("com.spotify.music") -> "Spotify or YouTube Music"
+        val label = installHint ?: when {
             packages.contains("com.google.android.apps.maps") -> "Maps"
             else -> "an app for this tile"
         }

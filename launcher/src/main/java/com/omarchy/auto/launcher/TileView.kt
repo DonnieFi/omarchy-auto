@@ -33,7 +33,7 @@ class TileView @JvmOverloads constructor(
     private val ticker = object : Runnable {
         override fun run() {
             invalidate()
-            handler.postDelayed(this, 1000L)
+            handler.postDelayed(this, millisToNextMinute())
         }
     }
 
@@ -199,5 +199,10 @@ class TileView @JvmOverloads constructor(
     private fun toggle(tile: TileId) {
         renderer.toggle(tile)
         invalidate()
+    }
+
+    private fun millisToNextMinute(): Long {
+        val now = System.currentTimeMillis()
+        return 60_000L - (now % 60_000L) + 50L
     }
 }

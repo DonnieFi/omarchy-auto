@@ -53,7 +53,7 @@ class CarSurfaceRenderer(
         override fun run() {
             if (stopped) return
             draw()
-            if (!stopped) handler.postDelayed(this, 30_000L)
+            if (!stopped) handler.postDelayed(this, millisToNextMinute())
         }
     }
 
@@ -176,6 +176,11 @@ class CarSurfaceRenderer(
 
     private fun currentBackgroundKey(): String =
         "${ThemeStore.current().id}:${BackgroundStore.revision}"
+
+    private fun millisToNextMinute(): Long {
+        val now = System.currentTimeMillis()
+        return 60_000L - (now % 60_000L) + 50L
+    }
 
     private fun refreshBackground() {
         backgroundKey = currentBackgroundKey()

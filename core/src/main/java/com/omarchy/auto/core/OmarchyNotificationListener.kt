@@ -16,6 +16,7 @@ class OmarchyNotificationListener : NotificationListenerService() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        NotificationSettings.init(this)
     }
 
     override fun onDestroy() {
@@ -80,14 +81,25 @@ class OmarchyNotificationListener : NotificationListenerService() {
     }
 
     private fun shouldShow(sbn: StatusBarNotification): Boolean {
-        val n = sbn.notification
+        NotificationSettings.recordPackage(this, sbn.packageName)
         if (sbn.packageName == packageName) return false
+        if (!NotificationSettings.isPackageAllowed(sbn.packageName)) return false
+        if (NotificationSettings.isSensitivePackage(sbn.packageName)) return false
+        val n = sbn.notification
         if (n.flags and Notification.FLAG_ONGOING_EVENT != 0) return false
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return false
         if (n.visibility == Notification.VISIBILITY_SECRET) return false
         if (n.category == Notification.CATEGORY_TRANSPORT) return false
         if (n.category == Notification.CATEGORY_PROGRESS) return false
         if (n.category == Notification.CATEGORY_SERVICE) return false
+        val extras = n.extras
+        val title = textOf(extras.getCharSequence(Notification.EXTRA_TITLE))
+        val body = textOf(
+            extras.getCharSequence(Notification.EXTRA_BIG_TEXT)
+                ?: extras.getCharSequence(Notification.EXTRA_TEXT)
+                ?: extras.getCharSequence(Notification.EXTRA_SUB_TEXT),
+        )
+        if (NotificationSettings.isSensitiveText(title, body)) return false
         return true
     }
 

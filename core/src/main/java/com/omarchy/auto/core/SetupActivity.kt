@@ -4,15 +4,21 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -24,6 +30,9 @@ import android.widget.Toast
 class SetupActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var notificationButton: Button
+    private lateinit var sensitiveFilterButton: Button
+    private lateinit var allowAllNotificationsButton: Button
+    private lateinit var notificationSources: LinearLayout
     private lateinit var customBackgroundStatus: TextView
     private var theme = Themes.all.first()
     private var isLauncher = false
@@ -33,6 +42,8 @@ class SetupActivity : Activity() {
         ThemeStore.init(this)
         DisplaySettings.init(this)
         BackgroundStore.init(this)
+        LaunchTargetStore.init(this)
+        NotificationSettings.init(this)
         isLauncher = intent.getBooleanExtra(EXTRA_LAUNCHER, false)
         theme = ThemeStore.current()
         window.setBackgroundDrawable(ColorDrawable(theme.background))
@@ -112,6 +123,96 @@ class SetupActivity : Activity() {
             refreshDisplayControls()
         }
         column.addView(notificationButton)
+
+        column.addView(space(16))
+        column.addView(label("NOTIFICATION PRIVACY", 12f, theme.dim, letterSpacing = 0.12f))
+        column.addView(
+            label(
+                "OTP/2FA, banking, ongoing and system alerts are hidden. Bodies are " +
+                    "never logged. When the allow-list is on, only checked apps appear.",
+                12f,
+                theme.dim,
+            ).apply { setPadding(0, dp(8), 0, dp(4)) },
+        )
+        sensitiveFilterButton = button("SENSITIVE FILTER · ON") {
+            NotificationSettings.setBlockSensitive(
+                this,
+                !NotificationSettings.blockSensitive,
+            )
+            OmarchyNotificationListener.refresh(this)
+            refreshNotificationControls()
+        }
+        column.addView(sensitiveFilterButton)
+        allowAllNotificationsButton = button("ALLOW ALL APPS · ON") {
+            NotificationSettings.setAllowAll(this, !NotificationSettings.allowAll)
+            OmarchyNotificationListener.refresh(this)
+            refreshNotificationControls()
+        }
+        column.addView(allowAllNotificationsButton)
+        notificationSources = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(4), 0, dp(4))
+        }
+        column.addView(notificationSources)
+
+        if (isLauncher) {
+            column.addView(space(16))
+            column.addView(label("MEDIA TILE APP", 12f, theme.dim, letterSpacing = 0.12f))
+            column.addView(
+                label(
+                    "Choose what OPEN PLAYER launches on the phone. Android Auto uses the " +
+                        "active media session; the car host cannot launch these apps directly.",
+                    12f,
+                    theme.dim,
+                ).apply { setPadding(0, dp(8), 0, dp(4)) },
+            )
+            val targets = LaunchTargetStore.available(this)
+            if (targets.isEmpty()) {
+                column.addView(
+                    label(
+                        "No supported media or assistant apps are installed.",
+                        12f,
+                        theme.yellow,
+                    ).apply { setPadding(0, dp(4), 0, dp(8)) },
+                )
+            } else {
+                val selected = LaunchTargetStore.selected(this).key
+                val group = RadioGroup(this).apply {
+                    orientation = RadioGroup.VERTICAL
+                    setPadding(0, dp(4), 0, dp(4))
+                }
+                targets.forEach { target ->
+                    group.addView(
+                        RadioButton(this).apply {
+                            id = View.generateViewId()
+                            text = target.label
+                            textSize = 13f
+                            typeface = Typeface.MONOSPACE
+                            setTextColor(theme.foreground)
+                            buttonTintList = ColorStateList.valueOf(theme.accent)
+                            isChecked = target.key == selected
+                            gravity = Gravity.CENTER_VERTICAL
+                            layoutParams = RadioGroup.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                dp(48),
+                            )
+                            setPadding(0, dp(4), 0, dp(4))
+                            setOnClickListener {
+                                LaunchTargetStore.select(this@SetupActivity, target.key)
+                            }
+                        },
+                    )
+                }
+                column.addView(group)
+            }
+            column.addView(
+                label(
+                    "ChatGPT and Grok open their app; voice mode is a tap inside the app.",
+                    11f,
+                    theme.dim,
+                ).apply { setPadding(0, 0, 0, dp(8)) },
+            )
+        }
 
         column.addView(space(12))
         column.addView(label("BACKGROUND", 12f, theme.dim, letterSpacing = 0.12f))
@@ -218,6 +319,62 @@ class SetupActivity : Activity() {
         customBackgroundStatus.setTextColor(
             if (BackgroundStore.enabled) theme.green else theme.dim,
         )
+        refreshNotificationControls()
+    }
+
+    private fun refreshNotificationControls() {
+        sensitiveFilterButton.text =
+            "SENSITIVE FILTER · ${if (NotificationSettings.blockSensitive) "ON" else "OFF"}"
+        allowAllNotificationsButton.text =
+            "ALLOW ALL APPS · ${if (NotificationSettings.allowAll) "ON" else "OFF"}"
+        notificationSources.removeAllViews()
+        if (NotificationSettings.allowAll) {
+            notificationSources.addView(
+                label(
+                    "Allow-list off; every non-sensitive app is shown.",
+                    12f,
+                    theme.dim,
+                ).apply { setPadding(0, dp(4), 0, dp(4)) },
+            )
+            return
+        }
+        val packages = NotificationSettings.knownPackages.sorted()
+        if (packages.isEmpty()) {
+            notificationSources.addView(
+                label(
+                    "No notification sources seen yet. Checked apps will appear here " +
+                        "after they post.",
+                    12f,
+                    theme.yellow,
+                ).apply { setPadding(0, dp(4), 0, dp(4)) },
+            )
+            return
+        }
+        packages.forEach { pkg ->
+            notificationSources.addView(
+                CheckBox(this).apply {
+                    text = NotificationSettings.label(this@SetupActivity, pkg)
+                    textSize = 13f
+                    typeface = Typeface.MONOSPACE
+                    setTextColor(theme.foreground)
+                    buttonTintList = ColorStateList.valueOf(theme.accent)
+                    isChecked = pkg in NotificationSettings.allowedPackages
+                    gravity = Gravity.CENTER_VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        dp(48),
+                    )
+                    setOnCheckedChangeListener { _, checked ->
+                        NotificationSettings.setPackageAllowed(
+                            this@SetupActivity,
+                            pkg,
+                            checked,
+                        )
+                        OmarchyNotificationListener.refresh(this@SetupActivity)
+                    }
+                },
+            )
+        }
     }
 
     private fun refreshStatus() {

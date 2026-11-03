@@ -9,11 +9,11 @@ You are taking over the existing Omarchy Auto Android project. Do not rewrite th
 - **Phone:** Samsung SM-S721W, Android 17, currently reachable over wireless ADB. Check `adb devices -l`; the endpoint may change.
 - **Android Auto version on phone:** 17.9.664054-release as last checked.
 
-> **Current private build (2026-11-01):** versionCode 8 / 0.1.7, signed AAB at
-> `release/omarchy-auto-0.1.7-aa-release.aab` (SHA-256
-> `e81ea4dd1561f2d13b2aca86cf4065ed00c67d588bba5d4cbaf0143e4b6ea709`).
+> **Current private build (2026-11-02):** versionCode 9 / 0.1.8, signed AAB at
+> `release/omarchy-auto-0.1.8-aa-release.aab` (SHA-256
+> `5677400674114c9fe94b5e72d42429178487eb38cf515bbbef3298afd0f36cc9`).
 > 0.1.1 was already installed through Internal App Sharing and verified on the
-> owner's Kia; upload this 0.1.7 AAB to update it. The debug-APK steps below are
+> owner's Kia; upload this 0.1.8 AAB to update it. The debug-APK steps below are
 > retained as fallback history.
 
 ## Current app state
@@ -24,7 +24,7 @@ You are taking over the existing Omarchy Auto Android project. Do not rewrite th
 - Live: MediaSession, notifications, GPS speed. Vehicle is mock.
 - Current Drive stage is a demo map, not MapLibre/real navigation.
 - Notification refresh/dismiss controls and larger play/pause are in the latest branch.
-- Exact local wallpaper is `local-assets/wallpaper.jpg` (Tom Ballard Tokyo Studio, user calls it Tokyo Knight). It is ignored by git and must not be committed; clean builds use the fallback. If the file is absent, build the fallback.
+- Tokyo Night uses the tracked Tom Ballard Tokyo Studio image at `core/src/main/assets/themes/tokyo-night.webp` (Tom confirmed open-source distribution on 2026-11-02). `local-assets/` is optional and ignored by git for owner-specific private overrides.
 - Build toolchain: Gradle 9.8.2, AGP 9.5, built-in Kotlin, compileSdk 37, targetSdk 36.
 - Current debug APK: `auto/build/outputs/apk/debug/auto-debug.apk`.
 
@@ -42,12 +42,14 @@ You are taking over the existing Omarchy Auto Android project. Do not rewrite th
 
 ```sh
 cd /mnt/adata/opt/omarchyauto
-./gradlew :auto:bundleRelease -Pomarchy.includeLocalAssets=true
+./gradlew :auto:bundleRelease
 ```
 
-Use `release/omarchy-auto-0.1.7-aa-release.aab` (versionCode 8) and record its
-SHA-256. The private flag is required for the local-only wallpaper; omit it for
-a clean/public build.
+Use `release/omarchy-auto-0.1.8-aa-release.aab` (versionCode 9) and record its
+SHA-256. The Tokyo Night Tom Ballard image is tracked and included; add
+`-Pomarchy.includeLocalAssets=true` only for an owner-specific private override.
+Run `./gradlew verifyPublicReleaseAssets` before handing a public-track archive
+to CI/Play.
 
 ### 2. Create/use the Play Console app
 

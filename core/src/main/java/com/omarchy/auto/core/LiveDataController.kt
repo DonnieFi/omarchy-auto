@@ -8,6 +8,7 @@ class LiveDataController(context: Context) {
     private val app = context.applicationContext
     private var media: MediaWatcher? = null
     private var location: LocationWatcher? = null
+    private var battery: BatteryWatcher? = null
     private var map: MapSnapshotController? = null
     private var started = false
 
@@ -39,6 +40,10 @@ class LiveDataController(context: Context) {
             )
         }.also { it.start() }
 
+        battery = BatteryWatcher(app) { percent, charging ->
+            LiveDataStore.setBattery(percent, charging)
+        }.also { it.start() }
+
         map = MapSnapshotController(app).also { it.start() }
     }
 
@@ -46,9 +51,11 @@ class LiveDataController(context: Context) {
         if (!started) return
         started = false
         map?.stop()
+        battery?.stop()
         media?.stop()
         location?.stop()
         map = null
+        battery = null
         media = null
         location = null
     }

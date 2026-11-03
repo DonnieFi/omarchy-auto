@@ -17,6 +17,7 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     implementation("androidx.core:core:1.19.1")
     implementation("androidx.annotation:annotation:1.11.0")
     implementation("org.maplibre.gl:android-sdk:13.6.1")

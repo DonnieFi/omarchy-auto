@@ -2,35 +2,31 @@
 
 ## Tokyo Studio / “Tokyo Knight” artwork
 
-The README hero and the private Tokyo Night build use **Tom Ballard’s Tokyo
-Studio** artwork (the owner calls it the Tokyo Knight background).
+The README hero and the default Tokyo Night app background use **Tom Ballard’s
+Tokyo Studio** artwork (the owner calls it the Tokyo Knight background).
 
 Upstream source: [tcballard/omarchy-theme-tokyo-roadster](https://github.com/tcballard/omarchy-theme-tokyo-roadster),
-theme code MIT, Copyright (c) 2026 Tom Ballard. The repository's
-[CREDITS.md](https://github.com/tcballard/omarchy-theme-tokyo-roadster/blob/main/CREDITS.md)
-states that the Roadster photographs/artworks are user-supplied and that the
-original photographer, source URL, and media redistribution licence were not
-separately established. The theme's MIT licence covers configuration/code, not
-the artwork.
+theme code MIT, Copyright (c) 2026 Tom Ballard. Tom confirmed the artwork is
+open source and approved its inclusion in the repository, README, public site,
+and app builds on 2026-11-02.
 
 Use and credit:
 
-- `docs/img/hero-tokyo-night.webp` is committed for the README and public site,
-  credited to Tom Ballard in [`CREDITS.md`](../CREDITS.md).
-- `local-assets/` remains ignored by git. A private app build can embed the
-  owner's copy with `-Pomarchy.includeLocalAssets=true`.
-- Setup's `USE TOM BACKGROUND` copies the bundled `wallpaper.jpg` into
-  app-private storage. `CHOOSE BACKGROUND` stores a user-selected image there;
-  `USE THEME BACKGROUNDS` removes the custom override.
-- Default/public app builds exclude `local-assets/` and use the Omarchy theme
-  backgrounds or the code-drawn fallback.
-- The project [MIT licence](../LICENSE) covers project code and original assets,
-  not third-party artwork.
-- Verify the artwork's media rights before commercial redistribution. If the
-  rights holder asks, remove the README/site hero and the local app asset.
+- `docs/img/hero-tokyo-night.webp` is the README and public-site hero.
+- `core/src/main/assets/themes/tokyo-night.webp` is the default Tokyo Night app
+  background, cropped/resized to 1600×900 from Tom’s image.
+- `local-assets/` remains ignored by git for owner-specific private overrides.
+  It is no longer required for Tom’s image; normal debug and release builds
+  include the tracked Tokyo Night asset.
+- Setup’s `USE TOM BACKGROUND` copies the bundled Tokyo Night asset into
+  app-private storage so it survives theme changes. `CHOOSE BACKGROUND` stores
+  a user-selected image there; `USE THEME BACKGROUNDS` removes the custom
+  override.
+- The project [MIT licence](../LICENSE) covers project code and original assets.
+  The Tokyo Studio image is included with Tom’s permission and remains credited
+  to Tom Ballard.
 
-The README hero now uses Tokyo Studio with credit; other app previews use
-public-safe Omarchy backgrounds or the fallback.
+Other app previews use the public-safe Omarchy theme backgrounds or the fallback.
 
 ## Theme palettes and backgrounds
 
@@ -39,12 +35,13 @@ Palette values follow the MIT-licensed themes in
 Tokyo Night, Jade Horse/Osaka Jade, Gruvbox, Catppuccin, Kanagawa, Everforest,
 Nord, Ethereal, Ristretto, and Hackerman.
 
-The bundled `core/src/main/assets/themes/*.webp` backgrounds are resized and
-recompressed from the matching Omarchy theme `backgrounds/` directories:
+The bundled `core/src/main/assets/themes/*.webp` backgrounds: Tokyo Night is
+Tom Ballard’s Tokyo Studio image; the other nine are resized and recompressed
+from the matching Omarchy theme `backgrounds/` directories.
 
-| App theme | Omarchy source |
+| App theme | Source / credit |
 |---|---|
-| Tokyo Night | `tokyo-night/backgrounds/1-winding-road.webp` |
+| Tokyo Night | Tom Ballard / Tokyo Studio, 1600×900 (approved 2026-11-02) |
 | Osaka Jade | `jade-horse/backgrounds/03-carved-jade-horse.webp` |
 | Gruvbox | `gruvbox/backgrounds/5-leaves.jpg` |
 | Catppuccin | `catppuccin/backgrounds/2-waves.webp` |
@@ -56,10 +53,10 @@ recompressed from the matching Omarchy theme `backgrounds/` directories:
 | Hackerman | `hackerman/backgrounds/1-synth-scape.jpg` |
 
 Omarchy's repository is MIT-licensed, but individual background images may have
-separate media rights. These assets are for the private demo; verify each
-image's redistribution rights before a public release or public screenshot use.
-The exact Tom Ballard Tokyo Studio image remains the separate local-only
-override described above.
+separate media rights. These nine Omarchy-derived assets are still for the
+private demo; verify each image's redistribution rights before a public release
+or public screenshot use. Tokyo Night is the separate Tom Ballard image, whose
+inclusion is covered by the permission above.
 
 ## Fonts
 

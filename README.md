@@ -33,7 +33,7 @@ Built and checked on this machine:
   content stage. Tap a rail tile to engage it. Media has an in-app play/pause
   control; the stage `OPEN` button launches the real app.
 - Android Auto 0.1.1 was verified on the owner's real Kia Android Auto screen
-  over USB using Play Internal App Sharing. The 0.1.7 theme/map/sizing build is
+  over USB using Play Internal App Sharing. The 0.1.8 theme/map/sizing build is
   pending a car pass; the phone launcher has been used for map, theme and layout
   checks. The car-UX follow-up on `feat/car-ux-followup` (doubled bars, hidden
   Vehicle tile, background picker, notification scale) also needs a car pass.
@@ -60,14 +60,23 @@ export ANDROID_HOME=/path/to/android-sdk
 ./gradlew assembleDebug
 ```
 
-For the private local-wallpaper demo only, opt in explicitly:
+Tom Ballard’s Tokyo Studio image is tracked as the Tokyo Night theme
+background, so default builds include it. The private local-override flag is
+only needed for an owner-specific image:
 
 ```sh
 ./gradlew assembleDebug -Pomarchy.includeLocalAssets=true
 ```
 
-Default builds exclude `local-assets/`; use the private flag only for the
-owner's local APK/AAB. APKs:
+Default builds exclude `local-assets/`; that flag is for private overrides, not
+for Tom’s image. Before a public-track release, run the asset guard:
+
+```sh
+./gradlew verifyPublicReleaseAssets
+```
+
+It builds the release archives and fails if any `local-assets/` file appears in
+them. APKs:
 
 ```text
 auto/build/outputs/apk/debug/auto-debug.apk
@@ -107,7 +116,7 @@ tile again to minimize. The stage has an `OPEN` action for real apps:
 | Rail tile | Stage | OPEN action |
 |---|---|---|
 | Drive | real MapLibre/OpenFreeMap map + live GPS; no turn-by-turn | Google Maps |
-| Media | large now-playing/audio art + play/pause | Spotify, then YouTube Music |
+| Media | large now-playing/audio art + play/pause | selected in Setup: auto, Spotify, YouTube Music, YouTube, ChatGPT, Grok, etc. |
 | Comms | large notification list | default SMS app |
 | Vehicle | hidden until OBD/Torque is real | none — deferred |
 | Home | clock, theme chips, setup | Android Settings |
@@ -115,7 +124,8 @@ tile again to minimize. The stage has an `OPEN` action for real apps:
 Back from the launched app returns to the launcher. The top-right `THEME`
 button opens the Home theme picker with ten themes: Tokyo Night, Osaka Jade,
 Gruvbox, Catppuccin, Kanagawa, Everforest, Nord, Ethereal, Ristretto, and
-Hackerman. Each theme loads its matching Omarchy background. Setup also offers
+Hackerman. Tokyo Night uses Tom Ballard’s Tokyo Studio image; the other themes
+load their matching Omarchy background. Setup also offers
 `CHOOSE BACKGROUND`, `USE TOM BACKGROUND` (private builds), and
 `USE THEME BACKGROUNDS`; a custom choice overrides every theme until it is
 reset. The Android Auto app and the phone launcher are separate packages, so
@@ -124,15 +134,14 @@ size is per app for the same reason.
 
 ### Roadster background
 
-Setup's background picker is the supported path. The legacy app still looks for
-`wallpaper.jpg` (then `roadster.jpg`) in its files directory. The private local
-build can additionally bundle
-`local-assets/wallpaper.jpg` with
-`-Pomarchy.includeLocalAssets=true`. That file is **not committed**: the upstream
-Tokyo Roadster theme's CREDITS says the media redistribution rights were not
-established. Default and public builds exclude it and use the bundled Omarchy theme
-backgrounds (or the code-drawn fallback if an asset is missing). See
-[`docs/ASSETS.md`](docs/ASSETS.md).
+Setup's background picker is the supported path. Tom Ballard’s Tokyo Studio
+image is tracked at `core/src/main/assets/themes/tokyo-night.webp` and is the
+default Tokyo Night background in normal debug and release builds. `USE TOM
+BACKGROUND` locks that image across theme changes; `USE THEME BACKGROUNDS`
+returns to the active theme’s bundled image. `local-assets/` remains optional
+for owner-specific private overrides with
+`-Pomarchy.includeLocalAssets=true`, but it is no longer required for Tom’s
+image. See [`docs/ASSETS.md`](docs/ASSETS.md).
 
 ### Permissions
 
@@ -154,8 +163,8 @@ Without it the UI says so instead of inventing data.
 
 ### Android Auto — private Play test
 
-Current private build: **0.1.7** (versionCode 8), AAB at
-`release/omarchy-auto-0.1.7-aa-release.aab`.
+Current private build: **0.1.8** (versionCode 9), AAB at
+`release/omarchy-auto-0.1.8-aa-release.aab`.
 
 Android Auto does not trust an ADB-sideloaded Car App Library app. The reliable
 private route is **Play Internal App Sharing**: it installs the build from Play,
@@ -163,7 +172,7 @@ without a public listing or review, and accepts a debug APK or signed AAB.
 
 1. In Play Console, create an app with package name `com.omarchy.auto`.
 2. **Test and release → Internal app sharing**, upload
-   `release/omarchy-auto-0.1.7-aa-release.aab`.
+   `release/omarchy-auto-0.1.8-aa-release.aab`.
 3. Copy the sharing link. A Play-installed 0.1.1 can update in place; if the
    phone has an ADB-signed copy, uninstall it first, then open the link and
    install from Play.
@@ -174,8 +183,10 @@ without a public listing or review, and accepts a debug APK or signed AAB.
    build.
 
 Internal App Sharing re-signs the upload. This is still a private test app; it
-is not a public release. The 0.1.7 AAB includes MapLibre native libraries and,
-when built with `-Pomarchy.includeLocalAssets=true`, the local-only wallpaper.
+is not a public release. The 0.1.8 AAB includes MapLibre native libraries; the
+tracked Tokyo Night background is Tom Ballard’s Tokyo Studio image. A private
+build can still add
+owner-specific assets with `-Pomarchy.includeLocalAssets=true`.
 
 The car app uses the Car App Library **NAVIGATION** category. It draws the five
 tiles into `NavigationTemplate`'s map surface through
@@ -216,6 +227,7 @@ auto/                         Android Auto app (com.omarchy.auto)
 launcher/                     phone launcher (com.omarchy.auto.launcher)
   MainActivity                immersive launcher, app intents
   TileView                    shared renderer + hit testing
+  LaunchTargetStore           persisted Media tile app target (core)
 ```
 
 No Compose or QML runtime is on the car surface. The decision and rejected
@@ -228,18 +240,19 @@ that future path.
 | Area | Status |
 |---|---|
 | Five-tile layout, cut-out legends, mono type, 2px borders | Yes, shared renderer |
-| Themes | 10 Omarchy palettes + matching backgrounds; phone switch verified |
+| Themes | 10 Omarchy palettes + matching backgrounds (Tokyo Night: Tom Ballard); phone switch verified |
 | Background | Custom image picker, bundled Tom background, or theme backgrounds; custom choice survives theme changes |
 | Bars | Doubled car title/footer, large clock + now playing + speed; 1920×720 and 800×480 previews pass |
-| Clock | Live; phone redraws every second, car redraws on data changes with a 30 s fallback |
+| Clock | Live; idle redraws align to the next minute, media progress stays 1 Hz |
+| Battery | Footer icon + percentage; charging accent; state-driven redraw |
 | Media | Live MediaSession metadata/art/progress; phone and car paths wired; 0.1.1 car test verified |
-| Notifications | Live listener + existing-notification load; launcher verified |
+| Notifications | Live listener + existing-notification load; OTP/2FA and banking filter; optional package allow-list; bodies not logged |
 | GPS speed | Location/GPS speed; launcher got a fix at 0 km/h on the bench |
 | Vehicle | Hidden by `FeatureFlags.SHOW_VEHICLE_TILE` until OBD/Torque is real |
 | Right rail + large stage | Verified on emulator and phone |
 | Rotation | Portrait/landscape reflow verified on the S24 FE |
 | Media play/pause/previous/next | Wired to MediaTransport; car pass pending |
-| AA NavigationTemplate + SurfaceCallback | Verified on real AA (0.1.1); 0.1.7 and the follow-up branch pending |
+| AA NavigationTemplate + SurfaceCallback | Verified on real AA (0.1.1); 0.1.8 car pass pending |
 | AA host action strip | Removed; canvas header owns THEME; car/DHU recheck pending |
 | Real map | OpenFreeMap dark style via MapLibre snapshots + live location puck; phone verified, car pending |
 | Notification detail | Full-screen card overlay; S/M/L text size in Setup; phone verified |
@@ -265,7 +278,7 @@ that future path.
   plus existing notifications after listener reconnect.
 - Tile-to-YouTube-Music and Back-to-launcher verified.
 - GPS provider returned a fix; speed read zero while stationary.
-- Android Auto host: 0.1.1 verified on the owner's real Kia screen. The 0.1.7
+- Android Auto host: 0.1.1 verified on the owner's real Kia screen. The 0.1.8
   theme/map/sizing build still needs the same car pass.
 - Real map: MapLibre snapshot of `https://tiles.openfreemap.org/styles/dark`
   with a live location puck and OpenStreetMap/OpenFreeMap attribution. No
@@ -273,7 +286,7 @@ that future path.
 
 ## Limitations
 
-- The 0.1.7 theme/map/sizing build and this branch's car-UX follow-up still
+- The 0.1.8 theme/map/sizing build and this branch's car-UX follow-up still
   need a real-car acceptance pass. 0.1.1 was verified there.
 - Sideloaded Car App Library availability is subject to Google's host policy;
   use Play Internal App Sharing for the trusted install.
@@ -281,15 +294,19 @@ that future path.
   THEME pill and surface shift; it needs a car/DHU pass to confirm the
   NavigationTemplate fills the car screen.
 - Media controls send play/pause, previous, and next through MediaController.
-- Notifications are not yet allow-listed; OTP/2FA filtering is future work.
+- Notification privacy is documented in
+  [`docs/NOTIFICATION-PRIVACY.md`](docs/NOTIFICATION-PRIVACY.md); OTP/2FA and
+  banking filtering plus the optional allow-list are implemented.
+- Redraw budget and remaining 30-minute car measurements are documented in
+  [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 - Location privacy: when the Drive stage is open, the phone's location is sent
   to OpenFreeMap tile servers to render the map. Omarchy Auto does not store a
   location history. There is no map-off switch yet.
 - Vehicle data is mock and the tile is hidden until OBD-II; Torque is not
   wired up.
-- The Tokyo Studio artwork is included in the README with credit to Tom Ballard;
-  app public builds still exclude it unless the private local-assets flag is
-  used. Verify the artwork's media rights before public redistribution.
+- The Tokyo Studio artwork is included in the README, public site, and app
+  builds with Tom Ballard’s permission and credit. Other Omarchy-derived theme
+  backgrounds still need per-image rights checks before a public release.
 - No public Play listing, store review, or production launch; private Internal
   App Sharing only.
 - Linux/Quickshell remains future work; it is not in the APKs.

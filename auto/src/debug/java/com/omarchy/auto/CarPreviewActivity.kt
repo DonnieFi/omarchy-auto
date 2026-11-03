@@ -90,6 +90,10 @@ class CarPreviewActivity : Activity() {
             wallpaper, state, output, "car-1280-comms-large.png", TileId.COMMS,
             overlayKey = null, width = 1280, height = 720,
         )
+        val full = fullCommsState(state)
+        render(wallpaper, full, output, "car-800-comms-large-full.png", TileId.COMMS, overlayKey = null, width = 800, height = 480)
+        render(wallpaper, full, output, "car-1280-comms-large-full.png", TileId.COMMS, overlayKey = null, width = 1280, height = 720)
+        render(wallpaper, full, output, "car-comms-large-full.png", TileId.COMMS, overlayKey = null)
         DisplaySettings.cycle()
         render(
             wallpaper, state, output, "car-800-comms-small.png", TileId.COMMS,
@@ -152,6 +156,17 @@ class CarPreviewActivity : Activity() {
         )
     }
 
+    private fun fullCommsState(base: DashboardState): DashboardState {
+        val now = System.currentTimeMillis()
+        val extra = listOf(
+            NotificationItem("5", "Signal", "Sam", "Grabbing coffee, want anything?", now - 240_000),
+            NotificationItem("6", "Gmail", "Play Console", "Internal testing release is live", now - 300_000),
+            NotificationItem("7", "Slack", "#omarchy", "New build passed review", now - 360_000),
+            NotificationItem("8", "Weather", "Rain at 4 PM", "Bring a jacket", now - 420_000),
+        )
+        return base.copy(notifications = base.notifications + extra)
+    }
+
     private fun previewState(art: Bitmap?): DashboardState {
         val now = System.currentTimeMillis()
         return DashboardState(
@@ -176,6 +191,8 @@ class CarPreviewActivity : Activity() {
             speedKph = 42f,
             gpsActive = true,
             locationAccess = true,
+            batteryPercent = 82,
+            batteryCharging = false,
             vehicleMock = true,
         )
     }

@@ -216,7 +216,7 @@ forwarded surface clicks; the host action strip remains theme-only.
 
 ## ADR-0011 — Roadster wallpaper is a local, uncommitted asset
 
-**Status:** accepted
+**Status:** superseded by ADR-0013 (2026-11-02)
 
 **Context:** The supplied Tom Ballard Tokyo Studio image (the owner calls it the
 Tokyo Knight background) is the requested visual anchor, but the upstream
@@ -246,8 +246,9 @@ contrast, and a deliberate chooser instead of cycling through many themes.
 **Decision:** Ship ten themes: Tokyo Night, Osaka Jade (Jade Horse palette),
 Gruvbox, Catppuccin, Kanagawa, Everforest, Nord, Ethereal, Ristretto, and
 Hackerman. Each has a matching 1600x900 WebP background resized from the
-Omarchy theme tree. Tokyo Night keeps the private local Tokyo Studio override
-when present. The top-bar THEME button and the Android Auto action-strip Theme
+Omarchy theme tree. Tokyo Night uses Tom Ballard’s Tokyo Studio image, now
+tracked with permission (ADR-0013); the other nine are Omarchy-derived.
+The top-bar THEME button and the Android Auto action-strip Theme
 action open the Home theme grid rather than cycling. Theme selection persists
 by id, and the Home picker is a 5x2 grid. Scrim and stage opacity are per-theme;
 secondary text uses contrast-adjusted `dim` values.
@@ -257,3 +258,24 @@ the theme picker is denser than the old four-chip row. Omarchy's theme code is
 MIT, but individual background images may have separate rights; they stay a
 private demo until each source is cleared. A future picker overlay should add
 larger theme cards and 48dp touch targets for compact displays.
+
+## ADR-0013 — Tokyo Studio artwork is cleared and bundled
+
+**Status:** accepted (2026-11-02)
+
+**Context:** Tom Ballard has confirmed that the Tokyo Studio artwork is open
+source and approved its inclusion in the repository, README, public site, and
+app builds. ADR-0011 kept the image local-only because the upstream artwork
+rights were unresolved.
+
+**Decision:** Track the image as
+`core/src/main/assets/themes/tokyo-night.webp` (1600×900, credited to Tom
+Ballard) and use it as the default Tokyo Night background in normal debug and
+release builds. Keep the hero at `docs/img/hero-tokyo-night.webp`. `local-assets/`
+remains an opt-in private override path for other owner-specific assets.
+`USE TOM BACKGROUND` copies the tracked theme image into app-private storage so
+it survives theme changes; `USE THEME BACKGROUNDS` clears that override.
+
+**Consequences:** ADR-0011 is superseded. The app no longer needs the private
+local-assets flag to show Tom’s image. Other Omarchy-derived theme backgrounds
+still carry their own per-image rights review.

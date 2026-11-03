@@ -35,7 +35,9 @@ object LiveDataStore {
     }
 
     private fun apply(transform: (DashboardState) -> DashboardState) {
-        state = transform(state)
+        val next = transform(state)
+        if (next == state) return
+        state = next
         listeners.forEach { it(state) }
     }
 
@@ -74,6 +76,10 @@ object LiveDataStore {
     fun notifyMapUpdated() = update { it.copy(mapRevision = it.mapRevision + 1) }
 
     fun notifyDisplayChanged() = update { it.copy(displayRevision = it.displayRevision + 1) }
+
+    fun setBattery(percent: Int?, charging: Boolean) = update {
+        it.copy(batteryPercent = percent, batteryCharging = charging)
+    }
 
     fun replaceNotifications(items: List<NotificationItem>) = update {
         it.copy(notifications = items.take(8))

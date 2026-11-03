@@ -7,23 +7,20 @@ Project code, original fallback artwork, and original documentation:
 
 ## Tokyo Studio / “Tokyo Knight” artwork
 
-The README hero and the private Tokyo Night build use **Tom Ballard’s Tokyo
-Studio** artwork from
+The README hero and the default Tokyo Night app background use **Tom Ballard’s
+Tokyo Studio** artwork from
 [tcballard/omarchy-theme-tokyo-roadster](https://github.com/tcballard/omarchy-theme-tokyo-roadster).
 
 - Theme author and original starter: **Tom Ballard**, 2026.
 - Theme code/configuration: MIT.
 - Artwork credit: **Tom Ballard / Tokyo Studio**.
-- The upstream [CREDITS](https://github.com/tcballard/omarchy-theme-tokyo-roadster/blob/main/CREDITS.md)
-  notes that the source photographs/artworks were user-supplied and that the
-  original photographer, source URL, and media redistribution licence were not
-  separately established.
+- Permission: Tom Ballard confirmed the artwork is open source and approved its
+  inclusion in this repository, the README, the public site, and app builds on
+  2026-11-02.
 
-The project MIT licence covers the project code and original assets. It does
-not relicense third-party artwork. The Tokyo Studio image is included in this
-private repository and README with credit to Tom; verify the artwork’s media
-rights with the upstream source before a public redistribution or commercial
-release.
+The project MIT licence covers the project code and original assets. The
+Tokyo Studio artwork is included with Tom’s permission and remains credited to
+Tom Ballard; this notice does not relicense any other third-party artwork.
 
 ## Omarchy themes and backgrounds
 

@@ -43,5 +43,7 @@ data class DashboardState(
     val accuracyM: Float? = null,
     val mapRevision: Int = 0,
     val displayRevision: Int = 0,
+    val batteryPercent: Int? = null,
+    val batteryCharging: Boolean = false,
     val vehicleMock: Boolean = true,
 )
