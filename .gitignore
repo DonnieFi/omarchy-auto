@@ -60,3 +60,16 @@ keystore.properties
 
 # local car photos/videos
 media/
+
+# Spike and internal planning documents
+docs/planning/
+docs/archive/
+docs/NAVIGATION-SPIKE.md
+docs/AA-INTERNAL-SHARING.md
+docs/BRIEF.md
+docs/PROMPT.md
+docs/DECISIONS.md
+docs/HARDWARE.md
+*-SPIKE.md
+*SPIKE*.md
+PLAN*.md

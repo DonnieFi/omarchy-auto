@@ -51,7 +51,7 @@ class TileRenderer {
     data class Hit(val target: Target, val index: Int = -1, val key: String? = null)
 
     private data class Layout(
-        val themeButton: RectF,
+        val themeButton: RectF?,
         val setupButton: RectF?,
         val chips: List<Pair<Int, RectF>>,
         val stageOpen: RectF?,
@@ -168,16 +168,19 @@ class TileRenderer {
         mode: Mode,
     ) {
         val theme = Themes.at(themeIndex)
-        val area = safeArea?.let { raw ->
-            RectF(
-                raw.left.coerceIn(0, width).toFloat(),
-                raw.top.coerceIn(0, height).toFloat(),
-                raw.right.coerceIn(0, width).toFloat(),
-                raw.bottom.coerceIn(0, height).toFloat(),
-            )
-        }?.takeIf { it.width() > 100f && it.height() > 100f } ?: RectF(0f, 0f, width.toFloat(), height.toFloat())
-
         val car = mode == Mode.CAR
+        val area = if (car) {
+            RectF(0f, 0f, width.toFloat(), height.toFloat())
+        } else {
+            safeArea?.let { raw ->
+                RectF(
+                    raw.left.coerceIn(0, width).toFloat(),
+                    raw.top.coerceIn(0, height).toFloat(),
+                    raw.right.coerceIn(0, width).toFloat(),
+                    raw.bottom.coerceIn(0, height).toFloat(),
+                )
+            }?.takeIf { it.width() > 100f && it.height() > 100f } ?: RectF(0f, 0f, width.toFloat(), height.toFloat())
+        }
         if (!FeatureFlags.SHOW_VEHICLE_TILE && selected == TileId.VEHICLE) {
             selected = null
         }
@@ -203,12 +206,16 @@ class TileRenderer {
         canvas.drawColor(theme.background)
         drawWallpaper(canvas, width, height, area, theme, unit)
 
-        val themeButton = RectF(
-            area.right - margin - 62f * unit * barScale,
-            area.top + (topBarH - 34f * unit * barScale) / 2f,
-            area.right - margin,
-            area.top + (topBarH + 34f * unit * barScale) / 2f,
-        )
+        val themeButton = if (car) {
+            null
+        } else {
+            RectF(
+                area.right - margin - 62f * unit * barScale,
+                area.top + (topBarH - 34f * unit * barScale) / 2f,
+                area.right - margin,
+                area.top + (topBarH + 34f * unit * barScale) / 2f,
+            )
+        }
         val chips = mutableListOf<Pair<Int, RectF>>()
 
         // A narrow rail of small tiles on the right, top-down. In the car the
@@ -246,7 +253,7 @@ class TileRenderer {
         }
         val railUnit = unit * (if (car) 1.9f else 1f)
 
-        drawTopBar(canvas, area, theme, unit, state, mode, themeButton, themeIndex)
+        drawTopBar(canvas, area, theme, unit, margin, state, mode, themeButton, themeIndex)
         val stageHit = if (selected != null) {
             drawStage(canvas, stage, theme, state, unit, mode, themeIndex, chips)
         } else {
@@ -271,7 +278,7 @@ class TileRenderer {
         }
 
         lastLayout = Layout(
-            themeButton = RectF(themeButton),
+            themeButton = themeButton?.let { RectF(it) },
             setupButton = stageHit.setup?.let { RectF(it) },
             chips = chips.map { it.first to RectF(it.second) },
             stageOpen = stageHit.open?.let { RectF(it) },
@@ -306,7 +313,7 @@ class TileRenderer {
             if (layout.notifCard?.contains(x, y) == true) return null
             return Hit(Target.OVERLAY_DISMISS)
         }
-        if (layout.themeButton.contains(x, y)) return Hit(Target.THEME)
+        layout.themeButton?.takeIf { it.contains(x, y) }?.let { return Hit(Target.THEME) }
         layout.setupButton?.takeIf { it.contains(x, y) }?.let { return Hit(Target.SETUP) }
         layout.chips.firstOrNull { it.second.contains(x, y) }?.let {
             return Hit(Target.THEME_CHIP, it.first)
@@ -635,7 +642,7 @@ class TileRenderer {
             }
         }
 
-        val open = if (mode == Mode.PHONE && id != TileId.VEHICLE) {
+        val open = if (id != TileId.VEHICLE) {
             val label = when (id) {
                 TileId.DRIVE -> "OPEN MAPS"
                 TileId.MEDIA -> "OPEN PLAYER"
@@ -643,21 +650,19 @@ class TileRenderer {
                 TileId.HOME -> "OPEN SETTINGS"
                 TileId.VEHICLE -> ""
             }
+            val textSize = 9f * stageChrome
+            val buttonWidth = maxOf(
+                142f * stageChrome,
+                measure(label, textSize, bold = true) + 24f * stageChrome,
+            )
+            val buttonHeight = 28f * stageChrome
             val rect = RectF(
-                stage.right - 16f * stageChrome - 142f * stageChrome,
-                stage.top + 8f * stageChrome,
+                stage.right - 16f * stageChrome - buttonWidth,
+                stage.top + 6f * stageChrome,
                 stage.right - 16f * stageChrome,
-                stage.top + 36f * stageChrome,
+                stage.top + 6f * stageChrome + buttonHeight,
             )
-            fill.color = withAlpha(theme.surfaceAlt, 235)
-            canvas.drawRoundRect(rect, 2f * stageChrome, 2f * stageChrome, fill)
-            stroke.strokeWidth = 1f * stageChrome
-            stroke.color = theme.border
-            canvas.drawRoundRect(rect, 2f * stageChrome, 2f * stageChrome, stroke)
-            text(
-                canvas, label, rect.centerX() - measure(label, 8f * stageChrome) / 2f,
-                rect.centerY() + 3f * stageChrome, 8f * stageChrome, theme.accent,
-            )
+            drawTextButton(canvas, rect, label, theme, stageChrome)
             rect
         } else {
             null
@@ -726,9 +731,10 @@ class TileRenderer {
         area: RectF,
         theme: OmarchyTheme,
         unit: Float,
+        margin: Float,
         state: DashboardState,
         mode: Mode,
-        themeButton: RectF,
+        themeButton: RectF?,
         themeIndex: Int,
     ) {
         val car = mode == Mode.CAR
@@ -741,7 +747,7 @@ class TileRenderer {
         canvas.drawRect(area.left, area.top + topBarH - 1f, area.right, area.top + topBarH, fill)
 
         val baseline = area.top + topBarH / 2f + 5.5f * barUnit
-        val brandX = area.left + 18f * barUnit
+        val brandX = area.left + margin
         val brandWidth = measure("OMARCHY", 16f * barUnit, bold = true)
         val autoX = brandX + brandWidth + 10f * barUnit
         val autoWidth = measure("// AUTO", 11f * barUnit)
@@ -751,12 +757,18 @@ class TileRenderer {
         val leftWithMode = modeX + modeWidth
         val leftWithoutMode = autoX + autoWidth
 
-        val nameRight = themeButton.left - 12f * barUnit
-        val clusterGap = 20f * barUnit
-        val minGap = 16f * barUnit
+        // In CAR mode there is no canvas THEME button; keep a right reserve so
+        // the clock and theme name stay clear of the host ActionStrip corner.
+        val nameRight = if (themeButton != null) {
+            themeButton.left - 12f * barUnit
+        } else {
+            area.right - margin - 88f * unit
+        }
+        val clusterGap = 16f * barUnit
+        val minGap = 14f * barUnit
         val nameSize = 10f * barUnit
         val clock = clockFormat.format(Date())
-        val clockSize = (if (car) 20f else 18f) * barUnit
+        val clockSize = 18f * barUnit
         val clockWidth = measure(clock, clockSize, bold = true)
         val fullName = Themes.at(themeIndex).name
         val shortName = Themes.at(themeIndex).shortName
@@ -804,29 +816,31 @@ class TileRenderer {
             theme.foreground, bold = true, maxWidth = (clockRight - clockLeft).coerceAtLeast(1f),
         )
 
-        val buttonChrome = unit * topBarScale(car)
-        fill.style = Paint.Style.FILL
-        fill.color = theme.surfaceAlt
-        canvas.drawRoundRect(themeButton, 2f * buttonChrome, 2f * buttonChrome, fill)
-        stroke.style = Paint.Style.STROKE
-        stroke.strokeWidth = 1f * buttonChrome
-        stroke.color = theme.border
-        canvas.drawRoundRect(themeButton, 2f * buttonChrome, 2f * buttonChrome, stroke)
-        text(
-            canvas, "THEME", themeButton.centerX() - measure("THEME", 9f * barUnit) / 2f,
-            themeButton.centerY() + 3f * barUnit, 9f * barUnit, theme.accent,
-        )
+        if (themeButton != null) {
+            val buttonChrome = unit * topBarScale(car)
+            fill.style = Paint.Style.FILL
+            fill.color = theme.surfaceAlt
+            canvas.drawRoundRect(themeButton, 2f * buttonChrome, 2f * buttonChrome, fill)
+            stroke.style = Paint.Style.STROKE
+            stroke.strokeWidth = 1f * buttonChrome
+            stroke.color = theme.border
+            canvas.drawRoundRect(themeButton, 2f * buttonChrome, 2f * buttonChrome, stroke)
+            text(
+                canvas, "THEME", themeButton.centerX() - measure("THEME", 9f * barUnit) / 2f,
+                themeButton.centerY() + 3f * barUnit, 9f * barUnit, theme.accent,
+            )
+        }
     }
 
     private fun topBarHeight(car: Boolean, unit: Float): Float =
-        (if (car) 128f else 56f) * unit
+        (if (car) 92f else 56f) * unit
 
     private fun footerHeight(car: Boolean, unit: Float): Float =
-        (if (car) 60f else 24f) * unit
+        (if (car) 52f else 24f) * unit
 
-    private fun topBarScale(car: Boolean): Float = if (car) 3f else 1f
+    private fun topBarScale(car: Boolean): Float = if (car) 2.2f else 1f
 
-    private fun footerScale(car: Boolean): Float = if (car) 3.1f else 1f
+    private fun footerScale(car: Boolean): Float = if (car) 2.2f else 1f
 
     private fun drawFooter(
         canvas: Canvas,
@@ -838,6 +852,7 @@ class TileRenderer {
         themeIndex: Int,
     ) {
         val car = mode == Mode.CAR
+        val margin = (if (car) 18f else 14f) * unit
         val footerH = footerHeight(car, unit)
         val textUnit = unit * footerScale(car)
         val top = area.bottom - footerH
@@ -848,10 +863,10 @@ class TileRenderer {
         canvas.drawRect(area.left, top, area.right, top + 1f, fill)
 
         val baseline = top + footerH / 2f + 3.5f * textUnit
-        var x = area.left + 16f * textUnit
+        var x = area.left + margin
         x = status(canvas, x, baseline, "MEDIA", state.mediaAccess, theme, textUnit)
-        x = status(canvas, x + 16f * textUnit, baseline, "NOTIF", state.notificationAccess, theme, textUnit)
-        x = status(canvas, x + 16f * textUnit, baseline, "GPS", state.locationAccess, theme, textUnit)
+        x = status(canvas, x + 14f * textUnit, baseline, "NOTIF", state.notificationAccess, theme, textUnit)
+        x = status(canvas, x + 14f * textUnit, baseline, "GPS", state.locationAccess, theme, textUnit)
 
         val batteryPercent = state.batteryPercent
         val batteryText = batteryPercent?.let { "$it%" }
@@ -864,7 +879,7 @@ class TileRenderer {
         } else {
             0f
         }
-        val batteryRight = area.right - 16f * textUnit
+        val batteryRight = area.right - margin
         val batteryLeft = batteryRight - batteryWidth
         if (batteryPercent != null) {
             drawBattery(
@@ -1065,7 +1080,6 @@ class TileRenderer {
             }
 
             val message = when {
-                !state.gpsActive -> "WAIT FOR GPS"
                 MapSnapshotStore.error != null -> "MAP OFFLINE"
                 else -> "MAP LOADING"
             }

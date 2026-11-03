@@ -29,6 +29,8 @@ class LocationWatcher(
     fun start() {
         if (started) return
         if (app.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED &&
+            app.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
             != PackageManager.PERMISSION_GRANTED
         ) {
             onUpdate(null, false, null, null, 0f, null)
@@ -38,30 +40,71 @@ class LocationWatcher(
             onUpdate(null, false, null, null, 0f, null)
             return
         }
-        if (!lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-            onUpdate(null, false, null, null, 0f, null)
+        val gpsEnabled = lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
+        val networkEnabled = lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+        if (!gpsEnabled && !networkEnabled) {
+            seedLastKnown(lm)
             return
         }
         wanted = true
         started = true
         try {
             // Last-known is useful only while fresh; stale fixes must not be
-            // labelled GPS LIVE. A real callback follows in a second or two.
-            lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                ?.takeIf { System.currentTimeMillis() - it.time in 0..30_000L }
-                ?.let(::publish)
-            lm.requestLocationUpdates(
-                LocationManager.GPS_PROVIDER,
-                1000L,
-                0f,
-                this,
-                Looper.getMainLooper(),
-            )
+            // labelled GPS LIVE, though their coordinates still center the map.
+            val freshGps = if (gpsEnabled) {
+                lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                    ?.takeIf { System.currentTimeMillis() - it.time in 0..30_000L }
+            } else {
+                null
+            }
+            if (freshGps != null) {
+                publish(freshGps)
+            } else {
+                seedLastKnown(lm)
+            }
+            if (gpsEnabled) {
+                lm.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER,
+                    1000L,
+                    0f,
+                    this,
+                    Looper.getMainLooper(),
+                )
+            } else if (networkEnabled) {
+                lm.requestLocationUpdates(
+                    LocationManager.NETWORK_PROVIDER,
+                    2000L,
+                    0f,
+                    this,
+                    Looper.getMainLooper(),
+                )
+            }
         } catch (_: SecurityException) {
             started = false
             onUpdate(null, false, null, null, 0f, null)
         } catch (_: Exception) {
             started = false
+            onUpdate(null, false, null, null, 0f, null)
+        }
+    }
+
+    private fun seedLastKnown(lm: LocationManager) {
+        val providers = listOf(
+            LocationManager.GPS_PROVIDER,
+            LocationManager.NETWORK_PROVIDER,
+            LocationManager.PASSIVE_PROVIDER,
+        )
+        val best = providers.mapNotNull { provider ->
+            try {
+                lm.getLastKnownLocation(provider)
+            } catch (_: Exception) {
+                null
+            }
+        }.maxByOrNull { it.time }
+        if (best != null) {
+            val accuracy = if (best.hasAccuracy()) best.accuracy else null
+            onUpdate(null, false, best.latitude, best.longitude, lastBearing, accuracy)
+        } else {
             onUpdate(null, false, null, null, 0f, null)
         }
     }

@@ -160,64 +160,62 @@ class SetupActivity : Activity() {
         }
         column.addView(notificationSources)
 
-        if (isLauncher) {
-            column.addView(space(16))
-            column.addView(label("MEDIA TILE APP", 12f, theme.dim, letterSpacing = 0.12f))
+        column.addView(space(16))
+        column.addView(label("MEDIA TILE APP", 12f, theme.dim, letterSpacing = 0.12f))
+        column.addView(
+            label(
+                "Choose what OPEN PLAYER launches on the phone. Android Auto uses the " +
+                    "active media session; tapping OPEN PLAYER opens the selected app on the phone.",
+                12f,
+                theme.dim,
+            ).apply { setPadding(0, dp(8), 0, dp(4)) },
+        )
+        val targets = LaunchTargetStore.available(this)
+        if (targets.isEmpty()) {
             column.addView(
                 label(
-                    "Choose what OPEN PLAYER launches on the phone. Android Auto uses the " +
-                        "active media session; the car host cannot launch these apps directly.",
+                    "No supported media or assistant apps are installed.",
                     12f,
-                    theme.dim,
-                ).apply { setPadding(0, dp(8), 0, dp(4)) },
+                    theme.yellow,
+                ).apply { setPadding(0, dp(4), 0, dp(8)) },
             )
-            val targets = LaunchTargetStore.available(this)
-            if (targets.isEmpty()) {
-                column.addView(
-                    label(
-                        "No supported media or assistant apps are installed.",
-                        12f,
-                        theme.yellow,
-                    ).apply { setPadding(0, dp(4), 0, dp(8)) },
-                )
-            } else {
-                val selected = LaunchTargetStore.selected(this).key
-                val group = RadioGroup(this).apply {
-                    orientation = RadioGroup.VERTICAL
-                    setPadding(0, dp(4), 0, dp(4))
-                }
-                targets.forEach { target ->
-                    group.addView(
-                        RadioButton(this).apply {
-                            id = View.generateViewId()
-                            text = target.label
-                            textSize = 13f
-                            typeface = Typeface.MONOSPACE
-                            setTextColor(theme.foreground)
-                            buttonTintList = ColorStateList.valueOf(theme.accent)
-                            isChecked = target.key == selected
-                            gravity = Gravity.CENTER_VERTICAL
-                            layoutParams = RadioGroup.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                dp(48),
-                            )
-                            setPadding(0, dp(4), 0, dp(4))
-                            setOnClickListener {
-                                LaunchTargetStore.select(this@SetupActivity, target.key)
-                            }
-                        },
-                    )
-                }
-                column.addView(group)
+        } else {
+            val selected = LaunchTargetStore.selected(this).key
+            val group = RadioGroup(this).apply {
+                orientation = RadioGroup.VERTICAL
+                setPadding(0, dp(4), 0, dp(4))
             }
-            column.addView(
-                label(
-                    "ChatGPT and Grok open their app; voice mode is a tap inside the app.",
-                    11f,
-                    theme.dim,
-                ).apply { setPadding(0, 0, 0, dp(8)) },
-            )
+            targets.forEach { target ->
+                group.addView(
+                    RadioButton(this).apply {
+                        id = View.generateViewId()
+                        text = target.label
+                        textSize = 13f
+                        typeface = Typeface.MONOSPACE
+                        setTextColor(theme.foreground)
+                        buttonTintList = ColorStateList.valueOf(theme.accent)
+                        isChecked = target.key == selected
+                        gravity = Gravity.CENTER_VERTICAL
+                        layoutParams = RadioGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            dp(48),
+                        )
+                        setPadding(0, dp(4), 0, dp(4))
+                        setOnClickListener {
+                            LaunchTargetStore.select(this@SetupActivity, target.key)
+                        }
+                    },
+                )
+            }
+            column.addView(group)
         }
+        column.addView(
+            label(
+                "ChatGPT and Grok open their app; voice mode is a tap inside the app.",
+                11f,
+                theme.dim,
+            ).apply { setPadding(0, 0, 0, dp(8)) },
+        )
 
         column.addView(space(12))
         column.addView(label("BACKGROUND", 12f, theme.dim, letterSpacing = 0.12f))

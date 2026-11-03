@@ -47,6 +47,20 @@ class TileView @JvmOverloads constructor(
 
     var onTileTap: ((TileId) -> Unit)? = null
     var onSetup: (() -> Unit)? = null
+    var mode: TileRenderer.Mode = TileRenderer.Mode.PHONE
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    fun selectStage(tile: TileId?) {
+        if (tile == null) {
+            renderer.selected?.let { renderer.toggle(it) }
+        } else {
+            renderer.show(tile)
+        }
+        invalidate()
+    }
 
     init {
         isClickable = true
@@ -77,7 +91,7 @@ class TileView @JvmOverloads constructor(
             height = height,
             state = LiveDataStore.state,
             themeIndex = ThemeStore.index,
-            mode = TileRenderer.Mode.PHONE,
+            mode = mode,
         )
     }
 

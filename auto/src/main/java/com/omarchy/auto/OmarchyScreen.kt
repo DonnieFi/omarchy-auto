@@ -22,8 +22,6 @@ import com.omarchy.auto.core.LiveDataStore
 class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
 
     private var surfaceRenderer: CarSurfaceRenderer? = null
-    private var visibleArea: Rect? = null
-    private var stableArea: Rect? = null
 
     private val dataListener: (DashboardState) -> Unit = {
         surfaceRenderer?.requestDraw()
@@ -34,7 +32,11 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
             val surface = surfaceContainer.surface ?: return
             surfaceRenderer?.stop()
             surfaceRenderer = CarSurfaceRenderer(surface, carContext).also {
-                applySafeArea(it)
+                if (surfaceContainer.width > 0 && surfaceContainer.height > 0) {
+                    it.setSafeArea(Rect(0, 0, surfaceContainer.width, surfaceContainer.height))
+                } else {
+                    it.setSafeArea(null)
+                }
                 it.start()
             }
         }
@@ -47,13 +49,12 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
         }
 
         override fun onVisibleAreaChanged(visibleArea: Rect) {
-            this@OmarchyScreen.visibleArea = Rect(visibleArea)
-            surfaceRenderer?.let(::applySafeArea)
+            // Ignore visibleArea insets so the transient ActionStrip never
+            // pushes down the top bar or squishes the full-screen layout.
         }
 
         override fun onStableAreaChanged(stableArea: Rect) {
-            this@OmarchyScreen.stableArea = Rect(stableArea)
-            surfaceRenderer?.let(::applySafeArea)
+            // Render full-bleed across the entire SurfaceContainer viewport.
         }
 
         override fun onClick(x: Float, y: Float) {
@@ -91,27 +92,10 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
         )
     }
 
-    private fun applySafeArea(renderer: CarSurfaceRenderer) {
-        // Stable is the persistent area; visible may be dynamic host chrome.
-        // Prefer stable, and intersect if both have been provided.
-        val stable = stableArea
-        val visible = visibleArea
-        val area = when {
-            stable != null && !stable.isEmpty && visible != null && !visible.isEmpty -> {
-                Rect(stable).apply { intersect(visible) }
-            }
-
-            stable != null && !stable.isEmpty -> stable
-            visible != null && !visible.isEmpty -> visible
-            else -> null
-        }
-        if (area != null) renderer.setSafeArea(area)
-    }
-
     override fun onGetTemplate(): Template {
         // NavigationTemplate.Builder.build() throws without an action strip.
-        // Keep it to one icon-only gear that opens the Home stage (setup and
-        // themes); the canvas header still owns THEME.
+        // Keep it to one icon-only gear that toggles the Home stage (setup and
+        // themes) while the canvas renders full-bleed without a duplicate button.
         return NavigationTemplate.Builder()
             .setActionStrip(ActionStrip.Builder().addAction(settingsAction).build())
             .build()

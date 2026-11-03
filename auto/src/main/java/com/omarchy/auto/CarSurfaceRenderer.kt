@@ -1,17 +1,23 @@
 package com.omarchy.auto
 
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Rect
+import android.net.Uri
 import android.os.Handler
 import android.os.HandlerThread
+import android.provider.Settings
 import com.omarchy.auto.core.diag.OaLog
 import android.view.Surface
 import com.omarchy.auto.core.AppBackground
 import com.omarchy.auto.core.BackgroundStore
+import com.omarchy.auto.core.LaunchTargetStore
 import com.omarchy.auto.core.LiveDataStore
 import com.omarchy.auto.core.MediaTransport
 import com.omarchy.auto.core.OmarchyNotificationListener
+import com.omarchy.auto.core.SetupActivity
 import com.omarchy.auto.core.ThemeStore
 import com.omarchy.auto.core.TileId
 import com.omarchy.auto.core.TileRenderer
@@ -46,6 +52,7 @@ class CarSurfaceRenderer(
 
     init {
         BackgroundStore.init(appContext)
+        LaunchTargetStore.init(appContext)
         refreshBackground()
     }
 
@@ -95,12 +102,12 @@ class CarSurfaceRenderer(
         if (stopped) return
         handler.post {
             if (stopped) return@post
-            renderer.show(TileId.HOME)
+            renderer.toggle(TileId.HOME)
             draw()
         }
     }
 
-    fun setSafeArea(rect: Rect) {
+    fun setSafeArea(rect: Rect?) {
         renderer.setSafeArea(rect)
     }
 
@@ -164,14 +171,67 @@ class CarSurfaceRenderer(
                     draw()
                 }
 
+                TileRenderer.Target.SETUP -> {
+                    startSafely(Intent(appContext, SetupActivity::class.java))
+                }
+
+                TileRenderer.Target.STAGE_OPEN -> {
+                    renderer.selected?.let(::launchStageTarget)
+                }
+
                 TileRenderer.Target.TILE_DRIVE -> toggle(TileId.DRIVE)
                 TileRenderer.Target.TILE_MEDIA -> toggle(TileId.MEDIA)
                 TileRenderer.Target.TILE_COMMS -> toggle(TileId.COMMS)
                 TileRenderer.Target.TILE_VEHICLE -> toggle(TileId.VEHICLE)
                 TileRenderer.Target.TILE_HOME -> toggle(TileId.HOME)
-                else -> Unit
             }
         }
+    }
+
+    private fun launchStageTarget(tile: TileId) {
+        when (tile) {
+            TileId.DRIVE -> openTarget(
+                listOf("com.google.android.apps.maps"),
+                Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=")),
+            )
+
+            TileId.MEDIA -> {
+                val target = LaunchTargetStore.selected(appContext)
+                openTarget(target.packages, null)
+            }
+
+            TileId.COMMS -> openTarget(
+                emptyList(),
+                Intent(Intent.ACTION_VIEW, Uri.parse("sms:")),
+            )
+
+            TileId.VEHICLE -> Unit
+
+            TileId.HOME -> openTarget(
+                emptyList(),
+                Intent(Settings.ACTION_SETTINGS),
+            )
+        }
+    }
+
+    private fun openTarget(packages: List<String>, fallback: Intent?) {
+        val pm = appContext.packageManager
+        for (pkg in packages) {
+            val intent = pm.getLaunchIntentForPackage(pkg)
+            if (intent != null && startSafely(intent)) return
+        }
+        if (fallback != null && fallback.resolveActivity(pm) != null) {
+            startSafely(fallback)
+        }
+    }
+
+    private fun startSafely(intent: Intent): Boolean = try {
+        appContext.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        true
+    } catch (_: ActivityNotFoundException) {
+        false
+    } catch (_: SecurityException) {
+        false
     }
 
     private fun currentBackgroundKey(): String =

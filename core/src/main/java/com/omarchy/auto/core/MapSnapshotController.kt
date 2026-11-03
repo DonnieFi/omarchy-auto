@@ -35,7 +35,15 @@ class MapSnapshotController(context: Context) {
     private var lastBearing = 0f
 
     private val listener: (DashboardState) -> Unit = { state ->
-        if (started) onState(state)
+        if (started) {
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                onState(state)
+            } else {
+                main.post {
+                    if (started) onState(LiveDataStore.state)
+                }
+            }
+        }
     }
 
     fun start() {
@@ -49,6 +57,9 @@ class MapSnapshotController(context: Context) {
             return
         }
         LiveDataStore.addListener(listener)
+        main.post {
+            if (started) onState(LiveDataStore.state)
+        }
     }
 
     fun stop() {
@@ -70,14 +81,20 @@ class MapSnapshotController(context: Context) {
 
     private fun onState(state: DashboardState) {
         if (!MapViewport.active) return
-        val lat = state.latitude ?: return
-        val lon = state.longitude ?: return
-        if (!state.gpsActive) return
+        val lat = state.latitude ?: MapSnapshotStore.latitude ?: DEFAULT_LAT
+        val lon = state.longitude ?: MapSnapshotStore.longitude ?: DEFAULT_LON
         val now = SystemClock.elapsedRealtime()
         if (inFlight) return
         if (now < retryAt) return
-        if (now - lastRequestAt < MIN_INTERVAL_MS) return
-        if (!movedEnough(lat, lon, state.bearing)) return
+        val width = MapViewport.width.coerceAtLeast(320)
+        val height = MapViewport.height.coerceAtLeast(240)
+        val needsInitial = MapSnapshotStore.bitmap == null ||
+            width != snapshotWidth ||
+            height != snapshotHeight
+        if (!needsInitial) {
+            if (now - lastRequestAt < MIN_INTERVAL_MS) return
+            if (!movedEnough(lat, lon, state.bearing)) return
+        }
         lastRequestAt = now
         lastLat = lat
         lastLon = lon
@@ -150,5 +167,7 @@ class MapSnapshotController(context: Context) {
         private const val ZOOM = 15.5
         private const val MIN_INTERVAL_MS = 2_500L
         private const val RETRY_MS = 10_000L
+        private const val DEFAULT_LAT = 43.6532
+        private const val DEFAULT_LON = -79.3832
     }
 }

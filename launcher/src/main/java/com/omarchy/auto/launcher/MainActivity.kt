@@ -20,10 +20,12 @@ import com.omarchy.auto.core.LiveDataController
 import com.omarchy.auto.core.SetupActivity
 import com.omarchy.auto.core.ThemeStore
 import com.omarchy.auto.core.TileId
+import com.omarchy.auto.core.TileRenderer
 
 class MainActivity : Activity() {
 
     private lateinit var controller: LiveDataController
+    private lateinit var tileView: TileView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,7 +37,7 @@ class MainActivity : Activity() {
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        val view = TileView(this).apply {
+        tileView = TileView(this).apply {
             onSetup = {
                 startActivity(
                     Intent(this@MainActivity, SetupActivity::class.java)
@@ -44,7 +46,8 @@ class MainActivity : Activity() {
             }
             onTileTap = { tile -> launch(tile) }
         }
-        setContentView(view)
+        setContentView(tileView)
+        applyPreviewIntent(intent)
 
         if (Build.VERSION.SDK_INT >= 30) {
             window.decorView.windowInsetsController?.apply {
@@ -64,6 +67,28 @@ class MainActivity : Activity() {
         }
 
         maybeAskForLocation()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        applyPreviewIntent(intent)
+    }
+
+    private fun applyPreviewIntent(intent: Intent?) {
+        val modeArg = intent?.getStringExtra("mode")
+        if (modeArg != null) {
+            tileView.mode = if (modeArg.equals("car", ignoreCase = true)) {
+                TileRenderer.Mode.CAR
+            } else {
+                TileRenderer.Mode.PHONE
+            }
+        }
+        val stageArg = intent?.getStringExtra("stage")
+        if (stageArg != null) {
+            val stage = TileId.entries.firstOrNull { it.name.equals(stageArg, ignoreCase = true) }
+            tileView.selectStage(stage)
+        }
     }
 
     override fun onResume() {
