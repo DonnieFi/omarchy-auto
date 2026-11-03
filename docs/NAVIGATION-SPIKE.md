@@ -59,7 +59,7 @@ Stadia's free noncommercial allowance is 200,000 shared credits/month; standard 
 
 ## Recommendation
 
-Continue with Ferrostar + hosted Valhalla if the key-backed and in-car checks pass. The native integration works in the emulator, but dashboard composition and real head-unit trust/rendering remain unproven. Keep the hosted provider replaceable with self-hosted Valhalla; no self-hosting is required for this alpha.
+The owner accepted this first test on 2026-11-02 and chose to proceed with Ferrostar + hosted Valhalla. Merge is deferred until the other branch is finished; key-backed and in-car checks remain follow-up validation. The native integration works in the emulator, but dashboard composition and real head-unit trust/rendering remain unproven. Keep the hosted provider replaceable with self-hosted Valhalla; no self-hosting is required for this alpha.
 
 ## Debug replay and emulator screenshots
 
@@ -75,3 +75,34 @@ adb shell am start -n com.omarchy.auto.navspike/.ReplayActivity
 The replay activity and recording are under `src/debug` and absent from release builds. Its header explicitly says RECORDED REPLAY. Route responses use the fixture; OpenFreeMap tiles still load over the network. This verifies real on-device map/guidance rendering, not Stadia availability, live driving quality, or real head-unit projection. The separate native speech-trigger test uses an upstream walking-route fixture containing recorded spoken instructions.
 
 Landscape and portrait map/guidance screens were visually checked on the API 35 emulator. System-bar spacing and readable status text were corrected after the first capture. Build, lint, two JVM tests and three native emulator tests pass.
+
+## Accepted direction and deferred merge handoff
+
+Owner decision, 2026-11-02: **go with this stack**. The first emulator test is accepted. Keep `feat/ferrostar-routing-spike` available and wait until the current `feat/tom-open-launch-targets` work is finished and merged into the intended destination (normally `main`). Do not merge now or overwrite the other checkout's uncommitted changes. If that work ends up on a different branch, use its final merged destination instead of assuming the name below.
+
+The routing implementation starts at commit `463ebb7`; subsequent commits on the same branch include this handoff. Merge the branch tip, not just the first commit.
+
+After the other branch lands, use a **clean integration checkout**. For example, from the repository:
+
+```sh
+git fetch origin
+git worktree add -b integrate/ferrostar-routing ../omarchy-auto-routing-integration origin/main
+cd ../omarchy-auto-routing-integration
+git merge --no-ff origin/feat/ferrostar-routing-spike
+```
+
+If a merge conflict occurs, resolve it before continuing. `settings.gradle.kts` must preserve all destination-branch modules and add `include(":navigation-spike")` exactly once. The standalone spike does not require replacing `:auto`, `:core`, or `:launcher` yet. Preserve the other branch's dashboard, notifications, build guards, and assets. The original working checkout contains earlier uncommitted copies of the spike; do not stage those again as unrelated feature work. Compare against the pushed routing branch before removing or overwriting any local copies.
+
+Configure `local.properties` with the local Android SDK path (do not commit it), then run:
+
+```sh
+./gradlew :auto:assembleDebug :launcher:assembleDebug :core:testDebugUnitTest \
+  :navigation-spike:assembleDebug :navigation-spike:testDebugUnitTest :navigation-spike:lintDebug
+./gradlew :navigation-spike:connectedDebugAndroidTest
+```
+
+Run the connected tests with a test emulator available. They install/uninstall the spike, so do not run a manual APK installation at the same time. Reinstall the debug APK afterward to inspect the replay in landscape and portrait. Confirm the destination branch's existing quality checks and CI pass too.
+
+Once integration checks pass, push `integrate/ferrostar-routing` and open a PR to `main` for the deferred merge. Do not force-push either feature branch or publish to Play as part of this handoff. After merging, record the merge commit and validation in `omarchy-2gd`.
+
+Acceptance of this first test is not a claim that the fixture calculates fresh routes: local off-route detection works, but replay returns the recorded response again. Verify real rerouting with a Stadia key (or a configured self-hosted Valhalla service), audible speech, live GPS, and the actual Android Auto head unit before calling live navigation validated. Weather remains later work.
