@@ -15,16 +15,18 @@ is real. The same Kotlin Canvas renderer powers a full-screen phone launcher.
 Project code is MIT-licensed; the artwork is third-party and credited
 separately.*
 
-## Status — v0.1 redirect (2026-11-01)
+## Status — public pre-alpha (2026-11-02)
 
-The repository is **private until launch**; contributors are added explicitly.
-The project pivoted from a Linux/Quickshell head unit to an Android target for
-the fastest path to a real in-car demo. The Linux path remains in `shell/` and
-in the docs archive as future work.
+Omarchy Auto is a pre-alpha project prepared for public source release. The
+phone launcher and Android Auto dashboard are usable on a test device. The
+routing alpha in `navigation-spike/` is a separate experimental app and is not
+part of the dashboard release yet. The old Linux/Quickshell path remains in
+`shell/` and the docs archive as future work.
 
 Built and checked on this machine:
 
-- `./gradlew assembleDebug` produces two signed debug APKs.
+- `./gradlew assembleDebug` produces the dashboard APKs. The optional routing
+  spike builds separately as `:navigation-spike:assembleDebug`.
 - Phone launcher runs on an Android 15 emulator and a Samsung S24 FE (Android
   17). Theme switch, live MediaSession, live notifications, a GPS fix, stage
   selection, tile launch, Back return, and portrait/landscape rotation were
@@ -33,10 +35,10 @@ Built and checked on this machine:
   content stage. Tap a rail tile to engage it. Media has an in-app play/pause
   control; the stage `OPEN` button launches the real app.
 - Android Auto 0.1.1 was verified on the owner's real Kia Android Auto screen
-  over USB using Play Internal App Sharing. The 0.1.8 theme/map/sizing build is
+  over USB using Play Internal App Sharing. The 0.1.8 dashboard build is
   pending a car pass; the phone launcher has been used for map, theme and layout
-  checks. The car-UX follow-up on `feat/car-ux-followup` (doubled bars, hidden
-  Vehicle tile, background picker, notification scale) also needs a car pass.
+  checks. The routing alpha passes its emulator tests, but live Stadia routing
+  and a real Android Auto head unit are still unverified.
 - The Desktop Head Unit was attempted, but the emulator image's Android Auto
   app is a Play Store stub and the image has no Play Store.
 
@@ -81,6 +83,7 @@ them. APKs:
 ```text
 auto/build/outputs/apk/debug/auto-debug.apk
 launcher/build/outputs/apk/debug/launcher-debug.apk
+navigation-spike/build/outputs/apk/debug/navigation-spike-debug.apk
 ```
 
 They are debug-signed. Verify with:
@@ -98,6 +101,8 @@ A clean clone only needs `ANDROID_HOME` (or `local.properties` with
 ```sh
 adb install -r auto/build/outputs/apk/debug/auto-debug.apk
 adb install -r launcher/build/outputs/apk/debug/launcher-debug.apk
+# Optional routing spike:
+adb install -r navigation-spike/build/outputs/apk/debug/navigation-spike-debug.apk
 ```
 
 ### Phone launcher
@@ -132,6 +137,30 @@ reset. The Android Auto app and the phone launcher are separate packages, so
 choose the background in each app's Setup if you use both. Notification text
 size is per app for the same reason.
 
+### Routing alpha (optional)
+
+`:navigation-spike` is a separate experimental app (`com.omarchy.auto.navspike`)
+for evaluating turn-by-turn with Ferrostar and hosted Valhalla. It is not part
+of the dashboard APK and does not replace the Drive stage yet.
+
+```sh
+./gradlew :navigation-spike:assembleDebug
+adb install -r navigation-spike/build/outputs/apk/debug/navigation-spike-debug.apk
+adb shell am start -n com.omarchy.auto.navspike/.SpikeActivity
+```
+
+Use the owner's own Stadia Maps key at runtime for live routing; no API key is
+embedded. The debug build also has a keyless recorded-route replay:
+
+```sh
+adb shell am start -n com.omarchy.auto.navspike/.ReplayActivity
+```
+
+Emulator tests prove the native engine, guidance events, off-route detection,
+and replay UI. Live routing, audible speech, real GPS and the Android Auto head
+unit remain follow-up validation. See
+[`docs/NAVIGATION-SPIKE.md`](docs/NAVIGATION-SPIKE.md).
+
 ### Roadster background
 
 Setup's background picker is the supported path. Tom Ballard’s Tokyo Studio
@@ -161,32 +190,20 @@ adb shell pm grant com.omarchy.auto.launcher android.permission.ACCESS_FINE_LOCA
 Notification access enables both the Comms tile and MediaSession discovery.
 Without it the UI says so instead of inventing data.
 
-### Android Auto — private Play test
+### Android Auto — test install
 
-Current private build: **0.1.8** (versionCode 9), AAB at
-`release/omarchy-auto-0.1.8-aa-release.aab`.
+Current test build: **0.1.8** (versionCode 9). Build the signed AAB with:
 
-Android Auto does not trust an ADB-sideloaded Car App Library app. The reliable
-private route is **Play Internal App Sharing**: it installs the build from Play,
-without a public listing or review, and accepts a debug APK or signed AAB.
+```sh
+./gradlew :auto:bundleRelease
+```
 
-1. In Play Console, create an app with package name `com.omarchy.auto`.
-2. **Test and release → Internal app sharing**, upload
-   `release/omarchy-auto-0.1.8-aa-release.aab`.
-3. Copy the sharing link. A Play-installed 0.1.1 can update in place; if the
-   phone has an ADB-signed copy, uninstall it first, then open the link and
-   install from Play.
-4. Open **Omarchy Auto setup** and grant notification access, location, and the
-   service notification. [Setup screen](docs/img/setup-1280x720.png).
-5. Connect the phone to the car over USB and launch **Omarchy Auto** from the
-   Android Auto launcher. Unknown sources is not required for the Play-installed
-   build.
-
-Internal App Sharing re-signs the upload. This is still a private test app; it
-is not a public release. The 0.1.8 AAB includes MapLibre native libraries; the
-tracked Tokyo Night background is Tom Ballard’s Tokyo Studio image. A private
-build can still add
-owner-specific assets with `-Pomarchy.includeLocalAssets=true`.
+Android Auto does not trust an ADB-sideloaded Car App Library app. The
+documented test route is **Play Internal App Sharing**, which installs from
+Play without a public listing or review. The owner-specific upload steps and
+host caveats live in [`docs/AA-INTERNAL-SHARING.md`](docs/AA-INTERNAL-SHARING.md).
+The 0.1.8 AAB includes MapLibre native libraries and the tracked Tokyo Studio
+Tokyo Night background.
 
 The car app uses the Car App Library **NAVIGATION** category. It draws the five
 tiles into `NavigationTemplate`'s map surface through
@@ -255,6 +272,7 @@ that future path.
 | AA NavigationTemplate + SurfaceCallback | Verified on real AA (0.1.1); 0.1.8 car pass pending |
 | AA host action strip | Removed; canvas header owns THEME; car/DHU recheck pending |
 | Real map | OpenFreeMap dark style via MapLibre snapshots + live location puck; phone verified, car pending |
+| Routing alpha | Separate Ferrostar + hosted Valhalla app; emulator replay/UI tests pass; live key/car validation pending |
 | Notification detail | Full-screen card overlay; S/M/L text size in Setup; phone verified |
 | Phone stage OPEN + Back | Verified with YouTube Music/Maps path |
 | README hero | `docs/img/hero-tokyo-night.webp` (Tom Ballard Tokyo Studio render, credited) |
@@ -279,7 +297,11 @@ that future path.
 - Tile-to-YouTube-Music and Back-to-launcher verified.
 - GPS provider returned a fix; speed read zero while stationary.
 - Android Auto host: 0.1.1 verified on the owner's real Kia screen. The 0.1.8
-  theme/map/sizing build still needs the same car pass.
+  dashboard and the routing alpha still need the same car pass.
+- Routing spike: `:navigation-spike:assembleDebug`, JVM tests, lint and native
+  emulator tests pass. Live Stadia routing, audible speech, real GPS and the
+  Android Auto head unit remain unverified. See
+  [`docs/NAVIGATION-SPIKE.md`](docs/NAVIGATION-SPIKE.md).
 - Real map: MapLibre snapshot of `https://tiles.openfreemap.org/styles/dark`
   with a live location puck and OpenStreetMap/OpenFreeMap attribution. No
   routing or turn-by-turn.
@@ -293,6 +315,9 @@ that future path.
 - The AA host action strip was removed on this branch to stop the floating
   THEME pill and surface shift; it needs a car/DHU pass to confirm the
   NavigationTemplate fills the car screen.
+- The routing alpha has not been validated with a live Stadia key, audible
+  speech, real GPS, or a real Android Auto head unit. Its replay tests are not
+  a claim of fresh routing quality.
 - Media controls send play/pause, previous, and next through MediaController.
 - Notification privacy is documented in
   [`docs/NOTIFICATION-PRIVACY.md`](docs/NOTIFICATION-PRIVACY.md); OTP/2FA and
@@ -307,13 +332,28 @@ that future path.
 - The Tokyo Studio artwork is included in the README, public site, and app
   builds with Tom Ballard’s permission and credit. Other Omarchy-derived theme
   backgrounds still need per-image rights checks before a public release.
-- No public Play listing, store review, or production launch; private Internal
-  App Sharing only.
+- No public Play listing, store review, or production launch yet. The public
+  source release is being prepared; see the publication gates below.
 - Linux/Quickshell remains future work; it is not in the APKs.
+
+## Publication gates
+
+Before flipping the repository or app to public:
+
+- Confirm the media rights for the nine Omarchy-derived theme backgrounds
+  (`omarchy-jnn.7`). Tokyo Studio is cleared with Tom Ballard's permission.
+- Complete the real-car dashboard and routing-alpha passes and capture dated
+  evidence.
+- Finish the Android Auto host allowlist check and the public Play listing.
+- Keep the routing alpha keyless by default; live routing needs each tester's
+  own Stadia key or a separately designed server.
+- Review [`THIRD_PARTY.md`](THIRD_PARTY.md), [`CREDITS.md`](CREDITS.md) and
+  [`docs/ASSETS.md`](docs/ASSETS.md) in the public tree.
 
 ## License
 
 Project code and original assets are released under the [MIT License](LICENSE).
 See [`CREDITS.md`](CREDITS.md) for Tom Ballard's Tokyo Studio artwork, Omarchy
 theme credits, and third-party asset notes. The MIT license does not relicense
-third-party artwork. AndroidX / Car App Library is Apache-2.0.
+third-party artwork. AndroidX / Car App Library is Apache-2.0. Full component
+notices are in [`THIRD_PARTY.md`](THIRD_PARTY.md).

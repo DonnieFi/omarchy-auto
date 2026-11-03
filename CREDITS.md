@@ -35,4 +35,5 @@ illustrations may have separate media rights; see
 
 AndroidX / Car App Library is Apache-2.0. Android Auto is a Google product;
 Omarchy Auto is an independent community project and is not affiliated with
-Google.
+Google. See [`THIRD_PARTY.md`](THIRD_PARTY.md) for the full component list,
+including MapLibre, OpenFreeMap, Ferrostar and Stadia.

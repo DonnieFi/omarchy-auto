@@ -18,7 +18,8 @@ You are taking over the existing Omarchy Auto Android project. Do not rewrite th
 
 ## Current app state
 
-- Two APKs: `auto` (`com.omarchy.auto`) and `launcher` (`com.omarchy.auto.launcher`).
+- Two dashboard APKs: `auto` (`com.omarchy.auto`) and `launcher` (`com.omarchy.auto.launcher`).
+- Optional routing alpha: `navigation-spike` (`com.omarchy.auto.navspike`), a separate app; it is not part of the dashboard AAB and needs its own install/validation.
 - The AA app is Car App Library NAVIGATION, `NavigationTemplate`, `AppManager.setSurfaceCallback`.
 - UI: all tiles minimized at launch; narrow right-side vertical rail; tapping a tile opens a large stage; tapping again minimizes.
 - Live: MediaSession, notifications, GPS speed. Vehicle is mock.
