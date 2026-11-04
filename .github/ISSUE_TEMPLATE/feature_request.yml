@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest an idea (alpha: not everything will be accepted)
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes: {label: Problem, description: What are you trying to do while driving / on the phone?}
+    validations: {required: true}
+  - type: textarea
+    id: proposal
+    attributes: {label: Proposed solution}
+    validations: {required: true}
+  - type: textarea
+    id: alternatives
+    attributes: {label: Alternatives considered}
+  - type: checkboxes
+    id: aa
+    attributes:
+      label: Android Auto constraints
+      options:
+        - label: I understand car-screen features are limited by Google's Car App Library templates and driver-distraction rules.
+  - type: dropdown
+    id: pr
+    attributes:
+      label: Willing to open a PR?
+      options: ["No", "Yes, after maintainer OK"]

@@ -1,0 +1,4 @@
+# Every path requires @DonnieFi review. Enable "Require review from Code Owners".
+*                    @DonnieFi
+/.github/            @DonnieFi
+/release/            @DonnieFi

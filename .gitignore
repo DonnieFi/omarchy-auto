@@ -73,3 +73,10 @@ docs/HARDWARE.md
 *-SPIKE.md
 *SPIKE*.md
 PLAN*.md
+
+# Local agent/tooling files (kept locally, not published)
+AGENTS.md
+CLAUDE.md
+.beads/
+.codex/
+.claude/

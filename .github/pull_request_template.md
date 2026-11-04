@@ -1,3 +1,12 @@
+## What problem this solves
+Closes #
+
+## Contributor checklist
+- [ ] Linked issue (required for features / non-trivial changes)
+- [ ] One concern, no unrelated refactors
+- [ ] "Allow edits by maintainers" left on
+- [ ] AI-assisted? I've read, run, and can explain every change
+
 <!-- Keep this short. A red review blocks merge. -->
 
 ## What changed
