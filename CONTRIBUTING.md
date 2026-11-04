@@ -1,10 +1,8 @@
 # Contributing
 
-This repository is private until launch. Do not publish the repository, builds,
-or screenshots without the owner's approval until then.
-
-This is a small prototype with a high bar for honesty. The car demo is the
-point; screenshots and claims must match what actually ran.
+Omarchy Auto is a pre-alpha Android Auto and phone dashboard with a high bar
+for honesty. The car demo is the point; screenshots and claims must match what
+actually ran.
 
 ## Build
 
@@ -25,7 +23,7 @@ launcher/build/outputs/apk/debug/launcher-debug.apk
 
 ## Before a PR
 
-- Build both APKs.
+- Build both APKs and run `./gradlew testDebugUnitTest verifyPublicReleaseAssets`.
 - Run `./gradlew assembleDebug` from a clean clone if you changed Gradle files.
 - Test the phone launcher on an emulator or device.
 - If you changed the car surface/template, state whether you tested it on a
@@ -35,13 +33,14 @@ launcher/build/outputs/apk/debug/launcher-debug.apk
 - Do **not** present test media, notifications, or mock tiles as real data.
   Label fixtures and mock content.
 - Do not commit `local.properties`, keystores, APKs, or generated build output.
-- Do not commit the Tokyo Roadster wallpaper. Its upstream media rights are not
-  established; use `local-assets/` (ignored) and read `docs/ASSETS.md`.
+- Do not commit private wallpaper overrides from `local-assets/` (ignored);
+  Tom Ballard's Tokyo Studio background is tracked at
+  `core/src/main/assets/themes/tokyo-night.webp` with credit in
+  [`CREDITS.md`](CREDITS.md) and [`docs/ASSETS.md`](docs/ASSETS.md).
 
 ## PRs and reviews
 
-Open a PR even for small changes. Keep `main` green. The initial scaffold was
-committed directly; subsequent work uses branches/PRs. Reviews should be red on
+Open a PR even for small changes. Keep `main` green. Reviews should be red on
 unverified car claims, unlabeled mock data, or committed secrets.
 
 ## Android Auto caveat
@@ -54,5 +53,5 @@ claiming support.
 
 ## Linux/QML path
 
-`shell/` and `docs/archive/` are retained future work, not part of the Android
-APKs. Do not remove them without an ADR.
+`shell/` is retained future work, not part of the Android APKs. Do not remove
+it without an ADR.

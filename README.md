@@ -1,12 +1,23 @@
 # Omarchy Auto
 
+[![Android CI](https://github.com/DonnieFi/omarchy-auto/actions/workflows/android.yml/badge.svg)](https://github.com/DonnieFi/omarchy-auto/actions/workflows/android.yml)
+[![Version](https://img.shields.io/badge/version-0.1.11--pre--alpha-7aa2f7?style=flat-square&labelColor=1a1b26)](https://github.com/DonnieFi/omarchy-auto)
+[![Platform](https://img.shields.io/badge/platform-Android%20Auto%20%7C%20Android%208.0%2B-9ece6a?style=flat-square&labelColor=1a1b26)](#architecture)
+[![Renderer](https://img.shields.io/badge/renderer-Kotlin%20Canvas%20%2B%20MapLibre-bb9af7?style=flat-square&labelColor=1a1b26)](#architecture)
+[![Themes](https://img.shields.io/badge/themes-10%20Omarchy%20Palettes-e0af68?style=flat-square&labelColor=1a1b26)](#phone-launcher)
+[![License: MIT](https://img.shields.io/badge/license-MIT-7dcfff?style=flat-square&labelColor=1a1b26)](LICENSE)
+
+[![Website](https://img.shields.io/badge/OMARCHYAUTO.COM-7aa2f7?style=for-the-badge&labelColor=1a1b26)](https://omarchyauto.com)
+[![Build & Install](https://img.shields.io/badge/BUILD_%26_INSTALL-9ece6a?style=for-the-badge&labelColor=1a1b26)](#build)
+[![Android Auto](https://img.shields.io/badge/ANDROID_AUTO-7dcfff?style=for-the-badge&labelColor=1a1b26)](#android-auto--test-install)
+[![Architecture](https://img.shields.io/badge/ARCHITECTURE-bb9af7?style=for-the-badge&labelColor=1a1b26)](#architecture)
+[![Credits](https://img.shields.io/badge/CREDITS_%26_ARTWORK-e0af68?style=for-the-badge&labelColor=1a1b26)](CREDITS.md)
+
 **An Omarchy-styled car UI for Android Auto and Android phones.** The car
 display is the primary target: a Car App Library **NavigationTemplate** app that
 draws a right-side rail (`Drive / Media / Comms / Home`) plus one large stage on
 the Android Auto map surface. The Vehicle tile is hidden until its data source
 is real. The same Kotlin Canvas renderer powers a full-screen phone launcher.
-
-**Public pre-alpha site:** [omarchyauto.com](https://omarchyauto.com)
 
 ![Omarchy Auto rail-and-stage UI over Tom Ballard's Tokyo Studio artwork](docs/img/hero-tokyo-night.webp)
 
@@ -36,7 +47,7 @@ Built and checked on this machine:
   play/pause, and next controls; the stage `OPEN` button launches the real app
   configured in Setup (`MEDIA TILE APP`).
 - Android Auto 0.1.1 was verified on the owner's real Kia Android Auto screen
-  over USB using Play Internal App Sharing. The **0.1.10** (versionCode 11)
+  over USB using Play Internal App Sharing. The **0.1.11** (versionCode 12)
   dashboard build includes the full-bleed car surface layout, immediate
   OpenFreeMap dark basemap snapshots on the Drive stage, the unified `MEDIA TILE
   APP` selector in Setup for both packages, and opt-in crash reporting / `SEND
@@ -196,7 +207,7 @@ Without it the UI says so instead of inventing data.
 
 ### Android Auto — test install
 
-Current test build: **0.1.10** (versionCode 11). Build the signed AAB with:
+Current test build: **0.1.11** (versionCode 12). Build the signed AAB with:
 
 ```sh
 ./gradlew :auto:bundleRelease
@@ -204,7 +215,7 @@ Current test build: **0.1.10** (versionCode 11). Build the signed AAB with:
 
 Android Auto does not trust an ADB-sideloaded Car App Library app. The
 documented test route is **Play Internal App Sharing**, which installs from
-Play without a public listing or review. The **0.1.10** AAB includes MapLibre
+Play without a public listing or review. The **0.1.11** AAB includes MapLibre
 native libraries, the tracked Tokyo Studio Tokyo Night background, the unified
 `MEDIA TILE APP` selector in Setup, and `SEND LOGS` / crash reporting.
 
@@ -272,7 +283,7 @@ prototype for future Linux work.
 | Right rail + large stage | Verified on emulator and phone |
 | Rotation | Portrait/landscape reflow verified on the S24 FE |
 | Media play/pause/previous/next | Wired to MediaTransport; car pass pending |
-| AA NavigationTemplate + SurfaceCallback | Verified on real AA (0.1.1); 0.1.10 car pass pending |
+| AA NavigationTemplate + SurfaceCallback | Verified on real AA (0.1.1); 0.1.11 car pass pending |
 | AA host action strip | Required host `ActionStrip` button toggles `HOME`; duplicate canvas `THEME` button omitted in `Mode.CAR` |
 | Real map | OpenFreeMap dark style via MapLibre snapshots rendered immediately on `[01 · DRIVE]` + live location puck |
 | Diagnostics | Opt-in crash queue + `SEND LOGS` share button in Setup |
@@ -300,7 +311,7 @@ prototype for future Linux work.
   plus existing notifications after listener reconnect.
 - Tile-to-YouTube-Music and Back-to-launcher verified.
 - GPS provider returned a fix; speed read zero while stationary.
-- Android Auto host: 0.1.1 verified on the owner's real Kia screen. The 0.1.10
+- Android Auto host: 0.1.1 verified on the owner's real Kia screen. The 0.1.11
   dashboard and the routing alpha still need the same car pass.
 - Routing spike: `:navigation-spike:assembleDebug`, JVM tests, lint and native
   emulator tests pass. Live Stadia routing, audible speech, real GPS and the
@@ -311,7 +322,7 @@ prototype for future Linux work.
 
 ## Limitations
 
-- The 0.1.10 build still needs a real-car acceptance pass. 0.1.1 was verified
+- The 0.1.11 build still needs a real-car acceptance pass. 0.1.1 was verified
   there.
 - Sideloaded Car App Library availability is subject to Google's host policy;
   use Play Internal App Sharing for the trusted install.
