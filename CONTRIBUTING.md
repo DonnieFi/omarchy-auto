@@ -55,3 +55,38 @@ claiming support.
 
 `shell/` is retained future work, not part of the Android APKs. Do not remove
 it without an ADR.
+
+## Who merges
+
+Anyone can file issues and open PRs from a fork. Only the maintainer
+(@DonnieFi) merges to `main`. `main` is protected: PR required, code-owner
+approval, green CI, no force-push.
+
+## Before you open a PR
+
+1. **Bugs / tiny fixes:** PR directly, linking any existing issue.
+2. **Features or anything non-trivial:** open an issue first and wait for a
+   maintainer 👍. During alpha, unsolicited feature PRs may be closed.
+3. **Not accepted:** refactor-only PRs, drive-by formatting, dependency bumps
+   (Dependabot handles those), test/CI tweaks for failures already red on `main`.
+4. One concern per PR. Keep it small. Leave **Allow edits by maintainers** on.
+5. Fill in the PR template, including how you tested on a real AA host.
+
+## AI-assisted contributions
+
+Welcome, same bar as any PR. You must understand and be able to explain every
+line, and have actually run it. Untested AI output or bulk AI PRs get closed.
+
+## Never commit
+
+Keystores, `local.properties`, signing configs with secrets, AAB/APK files,
+Play credentials, API keys. Release signing happens outside this repo.
+
+## Security
+
+Do not file public issues for vulnerabilities. See [SECURITY.md](SECURITY.md).
+
+## License
+
+By contributing you agree your contribution is licensed under the repo's MIT
+License.

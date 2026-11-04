@@ -1,0 +1,45 @@
+name: Bug report
+description: Something broken in the car app or phone launcher
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: Search existing issues first. Security issues go to SECURITY.md, not here.
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      options: [Android Auto (car/DHU), Phone launcher, Both, Install / Play / sideload]
+    validations: {required: true}
+  - type: textarea
+    id: summary
+    attributes: {label: Summary, description: One or two sentences.}
+    validations: {required: true}
+  - type: textarea
+    id: repro
+    attributes: {label: Steps to reproduce, placeholder: "1. ...\n2. ..."}
+    validations: {required: true}
+  - type: textarea
+    id: expected
+    attributes: {label: Expected vs actual}
+    validations: {required: true}
+  - type: input
+    id: version
+    attributes: {label: Omarchy Auto version, description: "Settings → About, e.g. 0.1.11 (12)"}
+    validations: {required: true}
+  - type: input
+    id: device
+    attributes: {label: Phone model + Android version}
+    validations: {required: true}
+  - type: input
+    id: aa
+    attributes: {label: Android Auto version + head unit / car (or DHU)}
+  - type: dropdown
+    id: install
+    attributes:
+      label: Install method
+      options: [Play internal testing, Sideloaded APK, Built from source]
+    validations: {required: true}
+  - type: textarea
+    id: evidence
+    attributes: {label: Logs / screenshots, description: "Redact personal info. `adb logcat` snippets welcome.", render: text}
