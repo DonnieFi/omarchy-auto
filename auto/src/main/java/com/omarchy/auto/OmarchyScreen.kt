@@ -60,6 +60,14 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
         override fun onClick(x: Float, y: Float) {
             surfaceRenderer?.tap(x, y)
         }
+
+        override fun onScroll(distanceX: Float, distanceY: Float) {
+            surfaceRenderer?.scroll(-distanceX, -distanceY)
+        }
+
+        override fun onScale(focusX: Float, focusY: Float, scaleFactor: Float) {
+            surfaceRenderer?.scale(scaleFactor)
+        }
     }
 
     private val settingsAction: Action = Action.Builder()

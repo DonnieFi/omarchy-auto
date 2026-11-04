@@ -15,6 +15,9 @@ class LiveDataController(context: Context) {
     fun start() {
         if (started) return
         started = true
+        RailConfigStore.init(app)
+        LaunchTargetStore.init(app)
+        StageWebController.init(app)
 
         LiveDataStore.setNotificationAccess(NotificationAccess.isEnabled(app))
         LiveDataStore.setLocation(
@@ -33,6 +36,7 @@ class LiveDataController(context: Context) {
         ).also { it.start() }
 
         location = LocationWatcher(app) { speed, active, latitude, longitude, bearing, accuracy ->
+            NavigationController.onLocationUpdate(latitude, longitude)
             LiveDataStore.setLocationFix(speed, active, latitude, longitude, bearing, accuracy)
             LiveDataStore.setLocation(
                 app.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==

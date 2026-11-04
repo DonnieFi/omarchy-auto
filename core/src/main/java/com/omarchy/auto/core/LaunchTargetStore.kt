@@ -21,7 +21,9 @@ object LaunchTargetStore {
         val label: String,
         val packages: List<String>,
         val installHint: String,
-    )
+    ) {
+        val id: String get() = key
+    }
 
     private val spotify = Target(
         key = "spotify",
@@ -78,28 +80,29 @@ object LaunchTargetStore {
 
     fun available(context: Context): List<Target> {
         val pm = context.packageManager
-        val hasAuto = auto.packages.any { installed(pm, it) }
+        val alwaysAvailableKeys = setOf(AUTO_KEY, "youtube", "chatgpt", "grok", "spotify", "youtube-music")
         return known.filter { target ->
-            if (target.key == AUTO_KEY) {
-                hasAuto
-            } else {
-                target.packages.any { installed(pm, it) }
-            }
+            target.key in alwaysAvailableKeys || target.packages.any { installed(pm, it) }
         }
     }
 
-    /** Saved target if still installed, otherwise the first installed target. */
+    /** Saved target if still available, otherwise auto. */
     fun selected(context: Context): Target {
+        init(context)
         val savedKey = prefs?.getString(KEY_MEDIA, AUTO_KEY) ?: AUTO_KEY
-        val installedTargets = available(context)
-        return installedTargets.firstOrNull { it.key == savedKey }
-            ?: installedTargets.firstOrNull { it.key != AUTO_KEY }
-            ?: auto
+        return known.firstOrNull { it.key == savedKey } ?: auto
     }
+
+    fun selectedKey(): String = prefs?.getString(KEY_MEDIA, AUTO_KEY) ?: AUTO_KEY
+
+    fun selectedMediaId(): String = selectedKey()
+
+    fun mediaTargets(): List<Target> = known.take(8)
 
     fun select(context: Context, key: String) {
         init(context)
         prefs?.edit()?.putString(KEY_MEDIA, key)?.apply()
+        LiveDataStore.notifyDisplayChanged()
     }
 
     private fun installed(pm: PackageManager, packageName: String): Boolean =

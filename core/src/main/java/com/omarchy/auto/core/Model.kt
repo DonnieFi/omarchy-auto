@@ -18,8 +18,18 @@ data class MediaSnapshot(
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
     val source: String = "",
+    val packageName: String = "",
     val art: Bitmap? = null,
 )
+
+data class MediaSessionItem(
+    val packageName: String,
+    val label: String,
+    val title: String = "",
+    val playing: Boolean = false,
+) {
+    val source: String get() = label
+}
 
 data class NotificationItem(
     val key: String,
@@ -31,6 +41,7 @@ data class NotificationItem(
 
 data class DashboardState(
     val media: MediaSnapshot? = null,
+    val mediaSessions: List<MediaSessionItem> = emptyList(),
     val mediaAccess: Boolean = false,
     val notifications: List<NotificationItem> = emptyList(),
     val notificationAccess: Boolean = false,

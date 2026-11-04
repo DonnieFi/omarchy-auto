@@ -10,7 +10,13 @@ import java.util.concurrent.CopyOnWriteArrayList
  * cross-process magic here: each app owns its own data sources.
  */
 object LiveDataStore {
-    private val main = Handler(Looper.getMainLooper())
+    private val main: Handler? by lazy {
+        try {
+            Looper.getMainLooper()?.let { Handler(it) }
+        } catch (_: Throwable) {
+            null
+        }
+    }
     private val listeners = CopyOnWriteArrayList<(DashboardState) -> Unit>()
 
     @Volatile
@@ -27,10 +33,25 @@ object LiveDataStore {
     }
 
     fun update(transform: (DashboardState) -> DashboardState) {
-        if (Looper.myLooper() == Looper.getMainLooper()) {
+        val mainLooper = try {
+            Looper.getMainLooper()
+        } catch (_: Throwable) {
+            null
+        }
+        val myLooper = try {
+            Looper.myLooper()
+        } catch (_: Throwable) {
+            null
+        }
+        if (mainLooper == null || myLooper == mainLooper) {
             apply(transform)
         } else {
-            main.post { apply(transform) }
+            val h = main
+            if (h != null) {
+                h.post { apply(transform) }
+            } else {
+                apply(transform)
+            }
         }
     }
 
@@ -41,8 +62,16 @@ object LiveDataStore {
         listeners.forEach { it(state) }
     }
 
-    fun setMedia(media: MediaSnapshot?, access: Boolean = true) = update {
-        it.copy(media = media, mediaAccess = access)
+    fun setMedia(
+        media: MediaSnapshot?,
+        access: Boolean = true,
+        sessions: List<MediaSessionItem> = state.mediaSessions,
+    ) = update {
+        it.copy(media = media, mediaAccess = access, mediaSessions = sessions)
+    }
+
+    fun setMediaSessions(sessions: List<MediaSessionItem>) = update {
+        it.copy(mediaSessions = sessions)
     }
 
     fun setMediaAccess(access: Boolean) = update { it.copy(mediaAccess = access) }
@@ -82,15 +111,17 @@ object LiveDataStore {
     }
 
     fun replaceNotifications(items: List<NotificationItem>) = update {
-        it.copy(notifications = items.take(8))
+        it.copy(notifications = items.take(MAX_NOTIFICATIONS))
     }
 
     fun addNotification(item: NotificationItem) = update { current ->
         val without = current.notifications.filterNot { it.key == item.key }
-        current.copy(notifications = (listOf(item) + without).take(8))
+        current.copy(notifications = (listOf(item) + without).take(MAX_NOTIFICATIONS))
     }
 
     fun removeNotification(key: String) = update { current ->
         current.copy(notifications = current.notifications.filterNot { it.key == key })
     }
+
+    const val MAX_NOTIFICATIONS = 30
 }

@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Reads notifications for the Comms tile. This is the same component in both
@@ -41,7 +42,7 @@ class OmarchyNotificationListener : NotificationListenerService() {
                 .filter(::shouldShow)
                 .mapNotNull(::toItem)
                 .sortedByDescending { it.postedAt }
-                .take(8),
+                .take(LiveDataStore.MAX_NOTIFICATIONS),
         )
     }
 
@@ -83,6 +84,8 @@ class OmarchyNotificationListener : NotificationListenerService() {
     private fun shouldShow(sbn: StatusBarNotification): Boolean {
         NotificationSettings.recordPackage(this, sbn.packageName)
         if (sbn.packageName == packageName) return false
+        val dismissedTime = dismissedAt[sbn.key]
+        if (dismissedTime != null && sbn.postTime <= dismissedTime) return false
         if (!NotificationSettings.isPackageAllowed(sbn.packageName)) return false
         if (NotificationSettings.isSensitivePackage(sbn.packageName)) return false
         val n = sbn.notification
@@ -125,6 +128,20 @@ class OmarchyNotificationListener : NotificationListenerService() {
     companion object {
         @Volatile
         private var instance: OmarchyNotificationListener? = null
+        private val dismissedAt = ConcurrentHashMap<String, Long>()
+
+        fun isDismissed(key: String, postTime: Long): Boolean {
+            val time = dismissedAt[key] ?: return false
+            return postTime <= time
+        }
+
+        fun markDismissed(key: String, postTime: Long = System.currentTimeMillis()) {
+            dismissedAt[key] = postTime
+        }
+
+        fun clearDismissedForTest() {
+            dismissedAt.clear()
+        }
 
         fun component(context: Context): ComponentName =
             ComponentName(context, OmarchyNotificationListener::class.java)
@@ -144,7 +161,9 @@ class OmarchyNotificationListener : NotificationListenerService() {
 
         fun dismissDisplayed(context: Context) {
             val service = instance
+            val now = System.currentTimeMillis()
             for (item in LiveDataStore.state.notifications) {
+                dismissedAt[item.key] = maxOf(item.postedAt, now)
                 try {
                     service?.cancelNotification(item.key)
                 } catch (_: Exception) {
@@ -157,6 +176,8 @@ class OmarchyNotificationListener : NotificationListenerService() {
 
         fun dismiss(context: Context, key: String) {
             val service = instance
+            val existing = LiveDataStore.state.notifications.firstOrNull { it.key == key }
+            dismissedAt[key] = maxOf(existing?.postedAt ?: 0L, System.currentTimeMillis())
             try {
                 service?.cancelNotification(key)
             } catch (_: Exception) {
