@@ -18,6 +18,7 @@ import com.omarchy.auto.core.MapCameraStore
 import com.omarchy.auto.core.MediaTransport
 import com.omarchy.auto.core.MediaWatcher
 import com.omarchy.auto.core.NavigationController
+import com.omarchy.auto.core.NavState
 import com.omarchy.auto.core.OmarchyNotificationListener
 import com.omarchy.auto.core.RailConfigStore
 import com.omarchy.auto.core.StageWebApp
@@ -53,6 +54,11 @@ class TileView @JvmOverloads constructor(
                 }
                 return false
             }
+
+            override fun onScaleEnd(detector: ScaleGestureDetector) {
+                lastTouchX = detector.focusX
+                lastTouchY = detector.focusY
+            }
         },
     )
     private val ticker = object : Runnable {
@@ -71,6 +77,7 @@ class TileView @JvmOverloads constructor(
     }
 
     var onTileTap: ((TileId) -> Unit)? = null
+    var onWebAppOpenOnPhone: ((StageWebApp) -> Unit)? = null
     var onSetup: (() -> Unit)? = null
     var mode: TileRenderer.Mode = TileRenderer.Mode.PHONE
         set(value) {
@@ -108,6 +115,7 @@ class TileView @JvmOverloads constructor(
     override fun onDetachedFromWindow() {
         handler.removeCallbacks(ticker)
         LiveDataStore.removeListener(dataListener)
+        StageWebController.setActive(false)
         super.onDetachedFromWindow()
     }
 
@@ -127,6 +135,7 @@ class TileView @JvmOverloads constructor(
         scaleDetector.onTouchEvent(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                renderer.resetGestureAccumulators()
                 downX = event.x
                 downY = event.y
                 lastTouchX = event.x
@@ -136,9 +145,33 @@ class TileView @JvmOverloads constructor(
                 return true
             }
 
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                downHit = null
+                lastTouchX = event.getX(0)
+                lastTouchY = event.getY(0)
+                return true
+            }
+
+            MotionEvent.ACTION_POINTER_UP -> {
+                val remainingIndex = if (event.actionIndex == 0 && event.pointerCount > 1) 1 else 0
+                lastTouchX = event.getX(remainingIndex)
+                lastTouchY = event.getY(remainingIndex)
+                downX = lastTouchX
+                downY = lastTouchY
+                renderer.resetGestureAccumulators()
+                return true
+            }
+
             MotionEvent.ACTION_MOVE -> {
+                if (scaleDetector.isInProgress) {
+                    lastTouchX = event.x
+                    lastTouchY = event.y
+                    return true
+                }
                 val dx = event.x - lastTouchX
                 val dy = event.y - lastTouchY
+                lastTouchX = event.x
+                lastTouchY = event.y
                 if (!dragging &&
                     (kotlin.math.abs(event.x - downX) > touchSlop ||
                         kotlin.math.abs(event.y - downY) > touchSlop)
@@ -146,9 +179,7 @@ class TileView @JvmOverloads constructor(
                     dragging = true
                     downHit = null
                 }
-                if (dragging && !scaleDetector.isInProgress) {
-                    lastTouchX = event.x
-                    lastTouchY = event.y
+                if (dragging) {
                     val state = LiveDataStore.state
                     if (renderer.scroll(event.x, event.y, dx, dy, state.latitude, state.longitude)) {
                         invalidate()
@@ -158,6 +189,7 @@ class TileView @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_UP -> {
+                renderer.resetGestureAccumulators()
                 val start = downHit
                 downHit = null
                 val wasDragging = dragging
@@ -173,6 +205,7 @@ class TileView @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_CANCEL -> {
+                renderer.resetGestureAccumulators()
                 downHit = null
                 dragging = false
                 return true
@@ -286,13 +319,21 @@ class TileView @JvmOverloads constructor(
             }
 
             TileRenderer.Target.MAP_NAV_TOGGLE -> {
-                if (NavigationController.destination == null && !NavigationController.navActive) {
-                    renderer.openKeyboard(
-                        TileRenderer.KeyboardMode.MAP_SEARCH,
-                        NavigationController.searchQuery,
-                    )
-                } else {
-                    NavigationController.toggleNavigation()
+                when (NavigationController.navState) {
+                    NavState.ROUTE_ERROR,
+                    NavState.LOCATION_REQUIRED -> {
+                        NavigationController.retryRoute()
+                    }
+                    else -> {
+                        if (NavigationController.destination == null && !NavigationController.navActive) {
+                            renderer.openKeyboard(
+                                TileRenderer.KeyboardMode.MAP_SEARCH,
+                                NavigationController.searchQuery,
+                            )
+                        } else {
+                            NavigationController.toggleNavigation()
+                        }
+                    }
                 }
                 invalidate()
             }
@@ -363,9 +404,15 @@ class TileView @JvmOverloads constructor(
 
             TileRenderer.Target.STAGE_OPEN -> {
                 val sel = renderer.selected ?: return
-                if (sel == TileId.MEDIA && renderer.webStageApp == null) {
+                if (sel == TileId.MEDIA) {
+                    val activeWeb = renderer.webStageApp
+                    if (activeWeb != null) {
+                        onWebAppOpenOnPhone?.invoke(activeWeb)
+                        return
+                    }
                     val target = LaunchTargetStore.selected(context)
-                    val matchingWeb = StageWebApp.entries.firstOrNull { it.id == target.key }
+                    val matchingWeb = target.stageApp
+                        ?: StageWebApp.entries.firstOrNull { it.id == target.key }
                     if (matchingWeb != null) {
                         renderer.openWebApp(matchingWeb)
                         invalidate()

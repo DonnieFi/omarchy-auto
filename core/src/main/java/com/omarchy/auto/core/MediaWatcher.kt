@@ -82,10 +82,12 @@ class MediaWatcher(
         } catch (_: SecurityException) {
             started = false
             wanted = false
+            LiveDataStore.setMediaSessions(emptyList())
             onPermissionDenied()
         } catch (_: Exception) {
             started = false
             wanted = false
+            LiveDataStore.setMediaSessions(emptyList())
             onPermissionDenied()
         }
     }
@@ -100,6 +102,7 @@ class MediaWatcher(
         controller?.unregisterCallback(controllerCallback)
         controller = null
         allControllers = emptyList()
+        LiveDataStore.setMediaSessions(emptyList())
         MediaTransport.detach(previous)
         try {
             manager?.removeOnActiveSessionsChangedListener(sessionsListener)
@@ -118,10 +121,12 @@ class MediaWatcher(
         } catch (_: SecurityException) {
             started = false
             wanted = false
+            LiveDataStore.setMediaSessions(emptyList())
             onPermissionDenied()
         } catch (_: Exception) {
             started = false
             wanted = false
+            LiveDataStore.setMediaSessions(emptyList())
             onPermissionDenied()
         }
     }

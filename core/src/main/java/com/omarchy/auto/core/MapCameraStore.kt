@@ -39,6 +39,8 @@ object MapCameraStore {
     var revision: Int = 0
         private set
 
+    private var accumulatedZoomDelta: Double = 0.0
+
     fun targetLat(stateLat: Double?, fallbackLat: Double): Double =
         if (!followGps && panLat != null) panLat!! else (stateLat ?: panLat ?: fallbackLat)
 
@@ -52,6 +54,7 @@ object MapCameraStore {
     }
 
     fun zoomIn(step: Double = 1.0) {
+        accumulatedZoomDelta = 0.0
         val next = (zoom + step).coerceIn(MIN_ZOOM, MAX_ZOOM)
         if (next != zoom) {
             zoom = next
@@ -61,6 +64,7 @@ object MapCameraStore {
     }
 
     fun zoomOut(step: Double = 1.0) {
+        accumulatedZoomDelta = 0.0
         val next = (zoom - step).coerceIn(MIN_ZOOM, MAX_ZOOM)
         if (next != zoom) {
             zoom = next
@@ -72,11 +76,15 @@ object MapCameraStore {
     fun scaleBy(scaleFactor: Float) {
         if (scaleFactor <= 0f || scaleFactor == 1f) return
         val delta = ln(scaleFactor.toDouble()) / ln(2.0)
-        val next = (zoom + delta).coerceIn(MIN_ZOOM, MAX_ZOOM)
-        if (kotlin.math.abs(next - zoom) >= 0.05) {
-            zoom = next
-            revision++
-            LiveDataStore.notifyDisplayChanged()
+        accumulatedZoomDelta += delta
+        if (kotlin.math.abs(accumulatedZoomDelta) >= 0.02) {
+            val next = (zoom + accumulatedZoomDelta).coerceIn(MIN_ZOOM, MAX_ZOOM)
+            accumulatedZoomDelta = 0.0
+            if (next != zoom) {
+                zoom = next
+                revision++
+                LiveDataStore.notifyDisplayChanged()
+            }
         }
     }
 
@@ -136,6 +144,7 @@ object MapCameraStore {
         followGps = true
         panLat = null
         panLon = null
+        accumulatedZoomDelta = 0.0
         revision = 0
     }
 

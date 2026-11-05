@@ -9,11 +9,21 @@ import java.net.URL
 import java.net.URLEncoder
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
+
+enum class NavState {
+    IDLE,
+    LOCATION_REQUIRED,
+    ROUTING,
+    ROUTE_ERROR,
+    PREVIEW,
+    ACTIVE,
+}
 
 data class SearchCandidate(
     val title: String,
@@ -32,6 +42,8 @@ data class RouteStep(
     val durationSeconds: Double,
     val latitude: Double,
     val longitude: Double,
+    val startLatitude: Double = latitude,
+    val startLongitude: Double = longitude,
 )
 
 data class ParsedRoute(
@@ -44,9 +56,48 @@ data class ParsedRoute(
 /**
  * Keyless address geocoding (Photon / Nominatim) and turn-by-turn routing
  * (OSRM) for the Drive stage.
+ *
+ * Safety invariants:
+ * 1. Never starts navigation from a map camera center or hard-coded fallback;
+ *    requires a recent, accurate GPS fix (`LOCATION_REQUIRED` otherwise).
+ * 2. Never disguises routing failure as active navigation (`ROUTE_ERROR` with
+ *    explicit Retry).
+ * 3. Uses monotonic request tokens so stale or cancelled async responses can
+ *    never overwrite newer destinations or repopulate after Stop.
  */
 object NavigationController {
+    const val MAX_FIX_AGE_MS = 45_000L
+    const val MAX_ACCURACY_METERS = 100f
+    private const val MIN_REQUEST_GAP_MS = 800L
+
     private val executor = Executors.newSingleThreadExecutor()
+    private val searchGeneration = AtomicLong(0L)
+    private val routeGeneration = AtomicLong(0L)
+
+    @Volatile
+    var photonBaseUrl: String = "https://photon.komoot.io/api/"
+
+    @Volatile
+    var nominatimBaseUrl: String = "https://nominatim.openstreetmap.org/search"
+
+    @Volatile
+    var osrmBaseUrl: String = "https://router.project-osrm.org/route/v1/driving"
+
+    @Volatile
+    var synchronousForTest: Boolean = false
+
+    @Volatile
+    var routeTransport: ((Double, Double, Double, Double) -> ParsedRoute?)? = null
+
+    @Volatile
+    var searchTransport: ((String, Double?, Double?) -> List<SearchCandidate>)? = null
+
+    @Volatile
+    private var lastNetworkRequestMs: Long = 0L
+
+    @Volatile
+    var navState: NavState = NavState.IDLE
+        private set
 
     @Volatile
     var searchQuery: String = ""
@@ -97,16 +148,24 @@ object NavigationController {
         private set
 
     @Volatile
+    var currentLegRemainingMeters: Double = 0.0
+        private set
+
+    @Volatile
     var statusMessage: String? = null
         private set
 
-    val navActive: Boolean get() = active
+    val navActive: Boolean get() = active && navState == NavState.ACTIVE
     val routePoints: List<Pair<Double, Double>> get() = routeGeometry
     val steps: List<RouteStep> get() = routeSteps
     val nextStepDistanceMeters: Double get() = distanceToNextTurnMeters
 
     fun currentInstruction(): String? =
-        if (destination != null || routingInFlight) currentHeadline() else null
+        if (destination != null || routingInFlight || navState != NavState.IDLE) {
+            currentHeadline()
+        } else {
+            null
+        }
 
     fun formatDuration(seconds: Double): String {
         val totalMins = (seconds / 60.0).toInt().coerceAtLeast(1)
@@ -115,6 +174,26 @@ object NavigationController {
         } else {
             "${totalMins}m"
         }
+    }
+
+    /**
+     * Returns the validated vehicle GPS origin `(lat, lon)` if and only if
+     * `LiveDataStore.state` has an active, recent, sufficiently accurate fix.
+     * Never falls back to map camera or static coordinates.
+     */
+    fun validGpsOrigin(nowMs: Long = System.currentTimeMillis()): Pair<Double, Double>? {
+        val s = LiveDataStore.state
+        if (!s.gpsActive) return null
+        val lat = s.latitude ?: return null
+        val lon = s.longitude ?: return null
+        if (s.locationUpdatedAtMs <= 0L || nowMs - s.locationUpdatedAtMs > MAX_FIX_AGE_MS) {
+            return null
+        }
+        val acc = s.accuracyM
+        if (acc != null && acc > MAX_ACCURACY_METERS) {
+            return null
+        }
+        return lat to lon
     }
 
     fun setQuery(value: String) {
@@ -135,163 +214,284 @@ object NavigationController {
     }
 
     fun clearQuery() {
+        searchGeneration.incrementAndGet()
+        searching = false
         searchQuery = ""
         searchResults = emptyList()
-        statusMessage = null
+        if (navState == NavState.IDLE) {
+            statusMessage = null
+        }
         LiveDataStore.notifyDisplayChanged()
     }
 
     fun searchAddress(query: String = searchQuery) {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return
+        val token = searchGeneration.incrementAndGet()
         searchQuery = trimmed
         searching = true
+        searchResults = emptyList()
         statusMessage = "SEARCHING..."
         LiveDataStore.notifyDisplayChanged()
 
-        val biasLat = LiveDataStore.state.latitude ?: MapSnapshotStore.latitude ?: 43.6532
-        val biasLon = LiveDataStore.state.longitude ?: MapSnapshotStore.longitude ?: -79.3832
-
-        executor.execute {
-            val results = fetchPhotonCandidates(trimmed, biasLat, biasLon)
-                .ifEmpty { fetchNominatimCandidates(trimmed) }
+        val origin = validGpsOrigin()
+        val task = Runnable {
+            val custom = searchTransport
+            val results = try {
+                if (custom != null) {
+                    custom(trimmed, origin?.first, origin?.second)
+                } else {
+                    throttleRequest()
+                    fetchPhotonCandidates(trimmed, origin?.first, origin?.second)
+                        .ifEmpty { fetchNominatimCandidates(trimmed) }
+                }
+            } catch (_: Exception) {
+                emptyList()
+            }
+            if (token != searchGeneration.get() || searchQuery != trimmed) {
+                return@Runnable
+            }
             searching = false
             searchResults = results
             statusMessage = if (results.isEmpty()) "NO RESULTS FOUND" else null
             LiveDataStore.notifyDisplayChanged()
         }
+        if (synchronousForTest) task.run() else executor.execute(task)
     }
 
-    fun selectDestination(candidate: SearchCandidate, autoStartNav: Boolean = true) {
+    fun selectDestination(
+        candidate: SearchCandidate,
+        autoStartNav: Boolean = true,
+        nowMs: Long = System.currentTimeMillis(),
+    ) {
+        val token = routeGeneration.incrementAndGet()
         destination = candidate
         searchResults = emptyList()
-        routingInFlight = true
-        statusMessage = "ROUTING..."
-        val state = LiveDataStore.state
-        val originLat = state.latitude ?: MapSnapshotStore.latitude ?: 43.6532
-        val originLon = state.longitude ?: MapSnapshotStore.longitude ?: -79.3832
-        if (autoStartNav) {
-            active = true
-            MapCameraStore.recenter()
-        } else {
-            MapCameraStore.focusOn(candidate.latitude, candidate.longitude, 15.0)
-        }
-        LiveDataStore.notifyDisplayChanged()
-
-        executor.execute {
-            val route = fetchOsrmRoute(originLat, originLon, candidate.latitude, candidate.longitude)
-            routingInFlight = false
-            if (route != null && route.geometry.isNotEmpty()) {
-                applyRoute(route, originLat, originLon)
-                statusMessage = null
-            } else {
-                // Direct line fallback if offline
-                routeGeometry = listOf(
-                    originLat to originLon,
-                    candidate.latitude to candidate.longitude,
-                )
-                val dist = haversineMeters(originLat, originLon, candidate.latitude, candidate.longitude)
-                routeSteps = listOf(
-                    RouteStep(
-                        instruction = "PROCEED TO ${candidate.title.uppercase(Locale.US)}",
-                        street = candidate.subtitle,
-                        distanceMeters = dist,
-                        durationSeconds = dist / 13.8,
-                        latitude = candidate.latitude,
-                        longitude = candidate.longitude,
-                    ),
-                )
-                currentStepIndex = 0
-                remainingDistanceMeters = dist
-                remainingDurationSeconds = dist / 13.8
-                distanceToNextTurnMeters = dist
-                statusMessage = null
-            }
-            LiveDataStore.notifyDisplayChanged()
-        }
-    }
-
-    fun toggleNavigation() {
-        if (active) {
-            stopNavigation()
-        } else {
-            val dest = destination
-            if (dest != null) {
-                active = true
-                MapCameraStore.recenter()
-                if (routeGeometry.isEmpty()) {
-                    selectDestination(dest, autoStartNav = true)
-                } else {
-                    LiveDataStore.notifyDisplayChanged()
-                }
-            }
-        }
-    }
-
-    fun stopNavigation() {
-        active = false
-        routingInFlight = false
+        // Immediately clear any previous route geometry/steps so old routes never linger.
         routeGeometry = emptyList()
         routeSteps = emptyList()
         currentStepIndex = 0
         remainingDistanceMeters = 0.0
         remainingDurationSeconds = 0.0
         distanceToNextTurnMeters = 0.0
+        currentLegRemainingMeters = 0.0
+        active = false
+
+        val origin = validGpsOrigin(nowMs)
+        if (origin == null) {
+            routingInFlight = false
+            navState = NavState.LOCATION_REQUIRED
+            statusMessage = "LOCATION REQUIRED · WAIT FOR GPS FIX"
+            LiveDataStore.notifyDisplayChanged()
+            return
+        }
+
+        routingInFlight = true
+        navState = NavState.ROUTING
+        statusMessage = "ROUTING..."
+        if (autoStartNav) {
+            MapCameraStore.recenter()
+        } else {
+            MapCameraStore.focusOn(candidate.latitude, candidate.longitude, 15.0)
+        }
+        LiveDataStore.notifyDisplayChanged()
+
+        val (originLat, originLon) = origin
+        val task = Runnable {
+            val custom = routeTransport
+            val route = try {
+                if (custom != null) {
+                    custom(originLat, originLon, candidate.latitude, candidate.longitude)
+                } else {
+                    throttleRequest()
+                    fetchOsrmRoute(originLat, originLon, candidate.latitude, candidate.longitude)
+                }
+            } catch (_: Exception) {
+                null
+            }
+            if (token != routeGeneration.get() || destination != candidate) {
+                return@Runnable
+            }
+            routingInFlight = false
+            if (route != null && route.geometry.size >= 2 && route.steps.isNotEmpty()) {
+                applyRoute(route, originLat, originLon)
+                active = autoStartNav
+                navState = if (autoStartNav) NavState.ACTIVE else NavState.PREVIEW
+                statusMessage = null
+            } else {
+                active = false
+                navState = NavState.ROUTE_ERROR
+                routeGeometry = emptyList()
+                routeSteps = emptyList()
+                remainingDistanceMeters = 0.0
+                remainingDurationSeconds = 0.0
+                distanceToNextTurnMeters = 0.0
+                currentLegRemainingMeters = 0.0
+                statusMessage = "ROUTE UNAVAILABLE · TAP RETRY"
+            }
+            LiveDataStore.notifyDisplayChanged()
+        }
+        if (synchronousForTest) task.run() else executor.execute(task)
+    }
+
+    fun retryRoute(nowMs: Long = System.currentTimeMillis()) {
+        val dest = destination ?: return
+        selectDestination(dest, autoStartNav = true, nowMs = nowMs)
+    }
+
+    fun toggleNavigation(nowMs: Long = System.currentTimeMillis()) {
+        when {
+            active || navState == NavState.ROUTING -> stopNavigation()
+            navState == NavState.ROUTE_ERROR || navState == NavState.LOCATION_REQUIRED -> {
+                retryRoute(nowMs)
+            }
+            else -> {
+                val dest = destination ?: return
+                if (validGpsOrigin(nowMs) == null) {
+                    active = false
+                    navState = NavState.LOCATION_REQUIRED
+                    statusMessage = "LOCATION REQUIRED · WAIT FOR GPS FIX"
+                    LiveDataStore.notifyDisplayChanged()
+                    return
+                }
+                if (routeGeometry.size >= 2 && routeSteps.isNotEmpty()) {
+                    active = true
+                    navState = NavState.ACTIVE
+                    statusMessage = null
+                    MapCameraStore.recenter()
+                    LiveDataStore.notifyDisplayChanged()
+                } else {
+                    selectDestination(dest, autoStartNav = true, nowMs = nowMs)
+                }
+            }
+        }
+    }
+
+    fun stopNavigation() {
+        routeGeneration.incrementAndGet()
+        active = false
+        routingInFlight = false
+        navState = NavState.IDLE
+        routeGeometry = emptyList()
+        routeSteps = emptyList()
+        currentStepIndex = 0
+        remainingDistanceMeters = 0.0
+        remainingDurationSeconds = 0.0
+        distanceToNextTurnMeters = 0.0
+        currentLegRemainingMeters = 0.0
         destination = null
         statusMessage = null
         LiveDataStore.notifyDisplayChanged()
     }
 
-    fun onLocationUpdate(lat: Double?, lon: Double?) {
-        if (!active || lat == null || lon == null) return
+    fun resetForTest() {
+        synchronousForTest = false
+        routeTransport = null
+        searchTransport = null
+        clearQuery()
+        stopNavigation()
+    }
+
+    fun onLocationUpdate(
+        lat: Double?,
+        lon: Double?,
+        accuracyM: Float? = null,
+        updatedAtMs: Long = System.currentTimeMillis(),
+    ) {
+        if (lat == null || lon == null) return
+        if (accuracyM != null && accuracyM > MAX_ACCURACY_METERS) return
+        if (!active || navState != NavState.ACTIVE) return
         val steps = routeSteps
         val dest = destination ?: return
         if (steps.isEmpty()) return
 
-        val idx = currentStepIndex.coerceIn(0, steps.lastIndex)
-        val step = steps[idx]
-        val distToStep = haversineMeters(lat, lon, step.latitude, step.longitude)
-        distanceToNextTurnMeters = distToStep
+        var idx = currentStepIndex.coerceIn(0, steps.lastIndex)
+        var step = steps[idx]
+        var distToManeuver = haversineMeters(lat, lon, step.latitude, step.longitude)
 
-        if (distToStep < 35.0 && idx < steps.lastIndex) {
-            currentStepIndex = idx + 1
-            val next = steps[currentStepIndex]
-            distanceToNextTurnMeters = haversineMeters(lat, lon, next.latitude, next.longitude)
+        while (distToManeuver < 35.0 && idx < steps.lastIndex) {
+            idx += 1
+            currentStepIndex = idx
+            step = steps[idx]
+            distToManeuver = haversineMeters(lat, lon, step.latitude, step.longitude)
         }
 
         val distToDest = haversineMeters(lat, lon, dest.latitude, dest.longitude)
-        if (distToDest < 30.0) {
+        if (idx == steps.lastIndex && distToDest < 30.0) {
             remainingDistanceMeters = 0.0
             remainingDurationSeconds = 0.0
+            distanceToNextTurnMeters = 0.0
+            currentLegRemainingMeters = 0.0
             statusMessage = "ARRIVED AT ${dest.title.uppercase(Locale.US)}"
             active = false
-        } else {
-            val tailSteps = steps.drop(currentStepIndex + 1)
-            remainingDistanceMeters = distanceToNextTurnMeters + tailSteps.sumOf { it.distanceMeters }
-            remainingDurationSeconds = (remainingDistanceMeters / 13.8)
-                .coerceAtLeast(tailSteps.sumOf { it.durationSeconds })
+            navState = NavState.IDLE
+            LiveDataStore.notifyDisplayChanged()
+            return
         }
+
+        val directSpan = haversineMeters(
+            step.startLatitude,
+            step.startLongitude,
+            step.latitude,
+            step.longitude,
+        )
+        val fractionRemaining = if (directSpan > 1.0) {
+            (distToManeuver / directSpan).coerceIn(0.0, 1.0)
+        } else {
+            0.0
+        }
+        val legRemaining = if (step.distanceMeters > 0.0 && directSpan > 1.0) {
+            step.distanceMeters * fractionRemaining
+        } else {
+            distToManeuver
+        }
+        val legDurationRemaining = if (step.durationSeconds > 0.0 && directSpan > 1.0) {
+            step.durationSeconds * fractionRemaining
+        } else {
+            legRemaining / 13.8
+        }
+
+        val tailSteps = steps.drop(idx + 1)
+        val tailDistance = tailSteps.sumOf { it.distanceMeters }
+        val tailDuration = tailSteps.sumOf { it.durationSeconds }
+
+        currentLegRemainingMeters = legRemaining
+        distanceToNextTurnMeters = legRemaining
+        remainingDistanceMeters = legRemaining + tailDistance
+        remainingDurationSeconds = legDurationRemaining + tailDuration
+        LiveDataStore.notifyDisplayChanged()
     }
 
     fun currentHeadline(): String {
-        val dest = destination
-        if (routingInFlight) return "CALCULATING ROUTE..."
+        when (navState) {
+            NavState.LOCATION_REQUIRED -> return statusMessage ?: "LOCATION REQUIRED · WAIT FOR GPS FIX"
+            NavState.ROUTING -> return "CALCULATING ROUTE..."
+            NavState.ROUTE_ERROR -> return statusMessage ?: "ROUTE UNAVAILABLE · TAP RETRY"
+            else -> Unit
+        }
         val steps = routeSteps
         if (steps.isNotEmpty()) {
             val step = steps[currentStepIndex.coerceIn(0, steps.lastIndex)]
             val streetPart = step.street.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
             return "${formatDistance(distanceToNextTurnMeters)} · ${step.instruction}$streetPart"
         }
+        val dest = destination
         if (dest != null) {
-            return "${formatDistance(remainingDistanceMeters)} · ${dest.title.uppercase(Locale.US)}"
+            return statusMessage ?: dest.title.uppercase(Locale.US)
         }
         return statusMessage ?: "READY"
     }
 
     fun currentEtaSummary(): String {
+        if (navState == NavState.LOCATION_REQUIRED) {
+            return "Accurate GPS fix required before routing"
+        }
+        if (navState == NavState.ROUTE_ERROR) {
+            return "Tap RETRY NAV when connection is available"
+        }
         val dest = destination ?: return ""
-        val mins = (remainingDurationSeconds / 60.0).toInt().coerceAtLeast(1)
-        return "${formatDistance(remainingDistanceMeters)} · ${mins}m · ${dest.title.uppercase(Locale.US)}"
+        if (remainingDistanceMeters <= 0.0) return dest.displayName
+        return "${formatDistance(remainingDistanceMeters)} · ETA ${formatDuration(remainingDurationSeconds)} · ${dest.title.uppercase(Locale.US)}"
     }
 
     fun formatDistance(meters: Double): String =
@@ -308,12 +508,25 @@ object NavigationController {
         remainingDistanceMeters = route.totalDistanceMeters
         remainingDurationSeconds = route.totalDurationSeconds
         val first = route.steps.firstOrNull()
-        distanceToNextTurnMeters = if (first != null) {
-            haversineMeters(originLat, originLon, first.latitude, first.longitude)
+        val firstSpan = if (first != null) {
+            first.distanceMeters.takeIf { it > 0.0 }
+                ?: haversineMeters(originLat, originLon, first.latitude, first.longitude)
         } else {
             route.totalDistanceMeters
         }
+        currentLegRemainingMeters = firstSpan
+        distanceToNextTurnMeters = firstSpan
     }
+
+    private data class RawOsrmStep(
+        val type: String,
+        val modifier: String,
+        val name: String,
+        val distanceMeters: Double,
+        val durationSeconds: Double,
+        val latitude: Double,
+        val longitude: Double,
+    )
 
     internal fun parseOsrmRouteJson(raw: String): ParsedRoute? {
         return try {
@@ -333,7 +546,7 @@ object NavigationController {
                     geometry += lat to lon
                 }
             }
-            val stepsList = mutableListOf<RouteStep>()
+            val rawSteps = mutableListOf<RawOsrmStep>()
             val legs = route.optJSONArray("legs")
             if (legs != null && legs.length() > 0) {
                 val steps = legs.getJSONObject(0).optJSONArray("steps")
@@ -349,10 +562,10 @@ object NavigationController {
                         val name = s.optString("name").orEmpty()
                         val dist = s.optDouble("distance", 0.0)
                         val dur = s.optDouble("duration", 0.0)
-                        val instruction = formatManeuver(type, modifier)
-                        stepsList += RouteStep(
-                            instruction = instruction,
-                            street = name,
+                        rawSteps += RawOsrmStep(
+                            type = type,
+                            modifier = modifier,
+                            name = name,
                             distanceMeters = dist,
                             durationSeconds = dur,
                             latitude = lat,
@@ -361,14 +574,9 @@ object NavigationController {
                     }
                 }
             }
-            // Drop the initial "depart" step if a turn step follows
-            val filteredSteps = if (stepsList.size > 1) stepsList.drop(1) else stepsList
-            ParsedRoute(
-                geometry = geometry,
-                steps = filteredSteps,
-                totalDistanceMeters = totalDistance,
-                totalDurationSeconds = totalDuration,
-            )
+            buildParsedRoute(geometry, rawSteps, totalDistance, totalDuration)
+                ?.takeIf { it.geometry.size >= 2 && it.steps.isNotEmpty() }
+                ?: parseOsrmFallback(raw)
         } catch (_: Exception) {
             parseOsrmFallback(raw)
         }
@@ -380,18 +588,37 @@ object NavigationController {
             ?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
         val totalDuration = Regex("\"duration\"\\s*:\\s*([0-9.]+)").find(raw)
             ?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
-        val coordSection = raw.substringAfter("\"coordinates\"", "").substringBefore("]", "")
+        val afterCoords = raw.substringAfter("\"coordinates\"", "")
+        val startIdx = afterCoords.indexOf('[')
+        val coordSection = if (startIdx >= 0) {
+            var depth = 0
+            var endIdx = -1
+            for (i in startIdx until afterCoords.length) {
+                if (afterCoords[i] == '[') {
+                    depth++
+                } else if (afterCoords[i] == ']') {
+                    depth--
+                    if (depth == 0) {
+                        endIdx = i
+                        break
+                    }
+                }
+            }
+            if (endIdx > startIdx) afterCoords.substring(startIdx, endIdx + 1) else afterCoords
+        } else {
+            ""
+        }
         val coordPairs = Regex("\\[\\s*(-?[0-9.]+)\\s*,\\s*(-?[0-9.]+)\\s*]")
-            .findAll(coordSection + "]")
+            .findAll(coordSection)
             .mapNotNull { m ->
                 val lon = m.groupValues[1].toDoubleOrNull() ?: return@mapNotNull null
                 val lat = m.groupValues[2].toDoubleOrNull() ?: return@mapNotNull null
                 lat to lon
             }.toList()
         val stepsSection = raw.substringAfter("\"steps\"", "")
-        val stepBlocks = stepsSection.split("\"maneuver\"").drop(1)
-        val stepsList = stepBlocks.mapIndexed { idx, block ->
-            val prevBlock = stepsSection.split("\"maneuver\"")[idx]
+        val parts = stepsSection.split("\"maneuver\"")
+        val rawSteps = parts.drop(1).mapIndexed { idx, block ->
+            val prevBlock = parts[idx]
             val name = Regex("\"name\"\\s*:\\s*\"([^\"]*)\"").findAll(prevBlock).lastOrNull()
                 ?.groupValues?.get(1).orEmpty()
             val dist = Regex("\"distance\"\\s*:\\s*([0-9.]+)").findAll(prevBlock).lastOrNull()
@@ -406,21 +633,80 @@ object NavigationController {
                 .find(block)
             val lon = locMatch?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
             val lat = locMatch?.groupValues?.get(2)?.toDoubleOrNull() ?: 0.0
-            RouteStep(
-                instruction = formatManeuver(type, modifier),
-                street = name,
+            RawOsrmStep(
+                type = type,
+                modifier = modifier,
+                name = name,
                 distanceMeters = dist,
                 durationSeconds = dur,
                 latitude = lat,
                 longitude = lon,
             )
         }
-        val filteredSteps = if (stepsList.size > 1) stepsList.drop(1) else stepsList
+        return buildParsedRoute(coordPairs, rawSteps, totalDistance, totalDuration)
+    }
+
+    /**
+     * Converts raw OSRM steps into navigable legs so every leg's distance and
+     * duration are preserved:
+     * - Each non-arrive OSRM step `i` represents driving leg `i` from
+     *   `rawSteps[i].location` to `endLocation(i)` (`rawSteps[i+1].location` or
+     *   `geometry.last()`).
+     * - If `rawSteps[0]` is `"depart"` and a turn step `rawSteps[1]` follows,
+     *   leg 0 announces the upcoming turn (`rawSteps[1]`) at `rawSteps[1].location`
+     *   while retaining leg 0's distance/duration, and leg 1 continues from
+     *   `rawSteps[1].location` to the next maneuver or destination.
+     */
+    private fun buildParsedRoute(
+        geometry: List<Pair<Double, Double>>,
+        rawSteps: List<RawOsrmStep>,
+        totalDistance: Double,
+        totalDuration: Double,
+    ): ParsedRoute? {
+        val nonArrive = rawSteps.filter { it.type != "arrive" || rawSteps.size == 1 }
+        if (nonArrive.isEmpty() && geometry.size < 2) return null
+        val routeEndLat = rawSteps.lastOrNull { it.type == "arrive" }?.latitude
+            ?: geometry.lastOrNull()?.first
+            ?: nonArrive.lastOrNull()?.latitude
+            ?: 0.0
+        val routeEndLon = rawSteps.lastOrNull { it.type == "arrive" }?.longitude
+            ?: geometry.lastOrNull()?.second
+            ?: nonArrive.lastOrNull()?.longitude
+            ?: 0.0
+
+        val builtSteps = nonArrive.mapIndexed { idx, current ->
+            val next = nonArrive.getOrNull(idx + 1)
+            val endLat = next?.latitude ?: routeEndLat
+            val endLon = next?.longitude ?: routeEndLon
+            // When on the initial depart leg and a turn maneuver follows, announce
+            // that upcoming turn at the end of leg 0.
+            val announce = if (current.type == "depart" && next != null) next else current
+            RouteStep(
+                instruction = formatManeuver(announce.type, announce.modifier),
+                street = announce.name.ifBlank { current.name },
+                distanceMeters = current.distanceMeters,
+                durationSeconds = current.durationSeconds,
+                latitude = endLat,
+                longitude = endLon,
+                startLatitude = current.latitude,
+                startLongitude = current.longitude,
+            )
+        }
+        val computedTotalDist = if (totalDistance > 0.0) {
+            totalDistance
+        } else {
+            builtSteps.sumOf { it.distanceMeters }
+        }
+        val computedTotalDur = if (totalDuration > 0.0) {
+            totalDuration
+        } else {
+            builtSteps.sumOf { it.durationSeconds }
+        }
         return ParsedRoute(
-            geometry = coordPairs,
-            steps = filteredSteps,
-            totalDistanceMeters = totalDistance,
-            totalDurationSeconds = totalDuration,
+            geometry = geometry,
+            steps = builtSteps,
+            totalDistanceMeters = computedTotalDist,
+            totalDurationSeconds = computedTotalDur,
         )
     }
 
@@ -439,14 +725,32 @@ object NavigationController {
         }
     }
 
+    private fun throttleRequest() {
+        val now = System.currentTimeMillis()
+        val elapsed = now - lastNetworkRequestMs
+        if (elapsed in 0 until MIN_REQUEST_GAP_MS) {
+            try {
+                Thread.sleep(MIN_REQUEST_GAP_MS - elapsed)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
+        lastNetworkRequestMs = System.currentTimeMillis()
+    }
+
     private fun fetchPhotonCandidates(
         query: String,
-        biasLat: Double,
-        biasLon: Double,
+        biasLat: Double?,
+        biasLon: Double?,
     ): List<SearchCandidate> {
         return try {
             val encoded = URLEncoder.encode(query, "UTF-8")
-            val url = "https://photon.komoot.io/api/?q=$encoded&lat=$biasLat&lon=$biasLon&limit=5"
+            val biasParams = if (biasLat != null && biasLon != null) {
+                "&lat=$biasLat&lon=$biasLon"
+            } else {
+                ""
+            }
+            val url = "$photonBaseUrl?q=$encoded$biasParams&limit=5"
             val raw = httpGet(url) ?: return emptyList()
             val features = JSONObject(raw).optJSONArray("features") ?: return emptyList()
             val results = mutableListOf<SearchCandidate>()
@@ -479,7 +783,7 @@ object NavigationController {
     private fun fetchNominatimCandidates(query: String): List<SearchCandidate> {
         return try {
             val encoded = URLEncoder.encode(query, "UTF-8")
-            val url = "https://nominatim.openstreetmap.org/search?format=json&limit=5&q=$encoded"
+            val url = "$nominatimBaseUrl?format=json&limit=5&q=$encoded"
             val raw = httpGet(url) ?: return emptyList()
             val arr = JSONArray(raw)
             val results = mutableListOf<SearchCandidate>()
@@ -511,8 +815,7 @@ object NavigationController {
         lon2: Double,
     ): ParsedRoute? {
         val coords = String.format(Locale.US, "%.6f,%.6f;%.6f,%.6f", lon1, lat1, lon2, lat2)
-        val url = "https://router.project-osrm.org/route/v1/driving/$coords" +
-            "?overview=full&geometries=geojson&steps=true"
+        val url = "$osrmBaseUrl/$coords?overview=full&geometries=geojson&steps=true"
         val raw = httpGet(url) ?: return null
         return parseOsrmRouteJson(raw)
     }

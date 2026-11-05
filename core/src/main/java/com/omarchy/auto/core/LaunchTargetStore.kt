@@ -21,6 +21,7 @@ object LaunchTargetStore {
         val label: String,
         val packages: List<String>,
         val installHint: String,
+        val stageApp: StageWebApp? = null,
     ) {
         val id: String get() = key
     }
@@ -48,9 +49,9 @@ object LaunchTargetStore {
         auto,
         spotify,
         youtubeMusic,
-        Target("youtube", "YOUTUBE", listOf("com.google.android.youtube"), "YouTube"),
-        Target("chatgpt", "CHATGPT", listOf("com.openai.chatgpt"), "ChatGPT"),
-        Target("grok", "GROK", listOf("ai.x.grok"), "Grok"),
+        Target("youtube", "YOUTUBE", listOf("com.google.android.youtube"), "YouTube", StageWebApp.YOUTUBE),
+        Target("chatgpt", "CHATGPT", listOf("com.openai.chatgpt"), "ChatGPT", StageWebApp.CHATGPT),
+        Target("grok", "GROK", listOf("ai.x.grok"), "Grok", StageWebApp.GROK),
         Target("gemini", "GEMINI", listOf("com.google.android.apps.bard"), "Gemini"),
         Target(
             "google-assistant",
@@ -78,19 +79,44 @@ object LaunchTargetStore {
         prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     }
 
+    fun isInstalled(context: Context, target: Target): Boolean {
+        val pm = context.packageManager
+        return target.packages.any { installed(pm, it) }
+    }
+
+    /** Native installed targets plus AUTO (for phone media launching). */
     fun available(context: Context): List<Target> {
         val pm = context.packageManager
-        val alwaysAvailableKeys = setOf(AUTO_KEY, "youtube", "chatgpt", "grok", "spotify", "youtube-music")
         return known.filter { target ->
-            target.key in alwaysAvailableKeys || target.packages.any { installed(pm, it) }
+            target.key == AUTO_KEY || target.packages.any { installed(pm, it) }
         }
     }
 
-    /** Saved target if still available, otherwise auto. */
+    /** Targets usable in the stage or setup (includes stage web apps and installed apps). */
+    fun stageTargets(context: Context): List<Target> {
+        val pm = context.packageManager
+        return known.filter { target ->
+            target.key == AUTO_KEY ||
+                target.stageApp != null ||
+                target.packages.any { installed(pm, it) }
+        }
+    }
+
+    /**
+     * Saved target if installed (or if it is a stage web app); otherwise falls
+     * back to the first installed native target or AUTO.
+     */
     fun selected(context: Context): Target {
         init(context)
         val savedKey = prefs?.getString(KEY_MEDIA, AUTO_KEY) ?: AUTO_KEY
-        return known.firstOrNull { it.key == savedKey } ?: auto
+        val saved = known.firstOrNull { it.key == savedKey }
+        if (saved != null) {
+            if (saved.key == AUTO_KEY || saved.stageApp != null || isInstalled(context, saved)) {
+                return saved
+            }
+        }
+        val firstInstalled = known.firstOrNull { it.key != AUTO_KEY && isInstalled(context, it) }
+        return firstInstalled ?: auto
     }
 
     fun selectedKey(): String = prefs?.getString(KEY_MEDIA, AUTO_KEY) ?: AUTO_KEY

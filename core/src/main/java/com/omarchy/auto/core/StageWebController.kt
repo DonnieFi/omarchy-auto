@@ -11,6 +11,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -23,13 +24,28 @@ import java.net.URLEncoder
  * rather than only opening an Activity on the phone screen.
  */
 object StageWebController {
-    private val main = Handler(Looper.getMainLooper())
+    private val main: Handler? by lazy {
+        try {
+            val looper = Looper.getMainLooper()
+            if (looper != null) Handler(looper) else null
+        } catch (_: Throwable) {
+            null
+        }
+    }
+    private val frameLock = Any()
     private var appContext: Context? = null
     private var webView: WebView? = null
-    private var buffer: Bitmap? = null
-    private var bufferCanvas: Canvas? = null
-    private var viewWidth: Int = 960
-    private var viewHeight: Int = 540
+    private var bufferA: Bitmap? = null
+    private var bufferB: Bitmap? = null
+    private var useBufferA: Boolean = true
+
+    @Volatile
+    var viewWidth: Int = 960
+        private set
+
+    @Volatile
+    var viewHeight: Int = 540
+        private set
 
     @Volatile
     var activeApp: StageWebApp = StageWebApp.YOUTUBE
@@ -37,6 +53,10 @@ object StageWebController {
 
     @Volatile
     var active: Boolean = false
+        private set
+
+    @Volatile
+    var paused: Boolean = false
         private set
 
     @Volatile
@@ -64,8 +84,17 @@ object StageWebController {
             if (!active) return
             captureFrame()
             if (active) {
-                main.postDelayed(this, 140L)
+                main?.postDelayed(this, 140L)
             }
+        }
+    }
+
+    private fun postMain(block: () -> Unit) {
+        val h = main
+        if (h != null) {
+            h.post(block)
+        } else {
+            block()
         }
     }
 
@@ -86,7 +115,38 @@ object StageWebController {
     }
 
     fun tapNormalized(nx: Float, ny: Float) {
-        tap(nx * viewWidth, ny * viewHeight)
+        val (w, h) = synchronized(frameLock) { viewWidth to viewHeight }
+        tap(nx * w, ny * h)
+    }
+
+    fun pause() {
+        setActive(false)
+    }
+
+    fun resume() {
+        setActive(true)
+    }
+
+    fun close() {
+        active = false
+        paused = true
+        postMain {
+            main?.removeCallbacks(frameLoop)
+            try {
+                webView?.stopLoading()
+                webView?.loadUrl("about:blank")
+                webView?.onPause()
+                webView?.pauseTimers()
+                webView?.destroy()
+            } catch (_: Throwable) {
+            }
+            webView = null
+            synchronized(frameLock) {
+                bitmap = null
+                bufferA = null
+                bufferB = null
+            }
+        }
     }
 
     fun setActive(enabled: Boolean, app: StageWebApp? = null) {
@@ -94,14 +154,31 @@ object StageWebController {
         if (app != null) activeApp = app
         if (active == enabled && !changedApp) return
         active = enabled
-        main.post {
-            main.removeCallbacks(frameLoop)
+        paused = !enabled
+        postMain {
+            main?.removeCallbacks(frameLoop)
             if (enabled) {
                 ensureWebView()
+                try {
+                    webView?.onResume()
+                    webView?.resumeTimers()
+                } catch (_: Throwable) {
+                }
                 if (changedApp || webView?.url.isNullOrBlank()) {
                     loadUrlInternal(activeApp.homeUrl)
                 }
-                main.post(frameLoop)
+                main?.post(frameLoop)
+            } else {
+                try {
+                    webView?.stopLoading()
+                    webView?.evaluateJavascript(
+                        "document.querySelectorAll('video,audio').forEach(e=>e.pause());",
+                        null,
+                    )
+                    webView?.onPause()
+                    webView?.pauseTimers()
+                } catch (_: Throwable) {
+                }
             }
         }
     }
@@ -109,11 +186,13 @@ object StageWebController {
     fun updateViewport(width: Int, height: Int) {
         val w = width.coerceIn(320, 1920)
         val h = height.coerceIn(200, 1080)
-        if (w == viewWidth && h == viewHeight) return
-        viewWidth = w
-        viewHeight = h
+        synchronized(frameLock) {
+            if (w == viewWidth && h == viewHeight) return
+            viewWidth = w
+            viewHeight = h
+        }
         if (active) {
-            main.post {
+            postMain {
                 layoutWebView()
                 captureFrame()
             }
@@ -125,12 +204,12 @@ object StageWebController {
         currentTitle = app.label
         currentUrl = app.homeUrl
         errorMessage = null
-        main.post {
+        postMain {
             ensureWebView()
             loadUrlInternal(app.homeUrl)
             if (active) {
-                main.removeCallbacks(frameLoop)
-                main.post(frameLoop)
+                main?.removeCallbacks(frameLoop)
+                main?.post(frameLoop)
             }
         }
     }
@@ -150,17 +229,18 @@ object StageWebController {
             }
             activeApp.searchTemplate.format(encoded)
         }
-        main.post {
+        postMain {
             ensureWebView()
             loadUrlInternal(url)
         }
     }
 
     fun tap(localX: Float, localY: Float) {
-        main.post {
-            val wv = webView ?: return@post
-            val x = localX.coerceIn(0f, viewWidth.toFloat())
-            val y = localY.coerceIn(0f, viewHeight.toFloat())
+        postMain {
+            val wv = webView ?: return@postMain
+            val (w, h) = synchronized(frameLock) { viewWidth to viewHeight }
+            val x = localX.coerceIn(0f, w.toFloat())
+            val y = localY.coerceIn(0f, h.toFloat())
             val downTime = SystemClock.uptimeMillis()
             val down = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, y, 0)
             val up = MotionEvent.obtain(downTime, downTime + 45L, MotionEvent.ACTION_UP, x, y, 0)
@@ -171,34 +251,36 @@ object StageWebController {
                 down.recycle()
                 up.recycle()
             }
-            main.postDelayed({ captureFrame() }, 80L)
+            main?.postDelayed({ captureFrame() }, 80L)
         }
     }
 
     fun scrollBy(dyPixels: Int) {
-        main.post {
-            val wv = webView ?: return@post
-            val maxScroll = (wv.contentHeight * wv.scale - viewHeight).toInt().coerceAtLeast(0)
-            val nextY = (wv.scrollY + dyPixels).coerceIn(0, maxScroll.coerceAtLeast(viewHeight * 4))
+        postMain {
+            val wv = webView ?: return@postMain
+            val h = synchronized(frameLock) { viewHeight }
+            val maxScroll = (wv.contentHeight * wv.scale - h).toInt().coerceAtLeast(0)
+            val nextY = (wv.scrollY + dyPixels).coerceIn(0, maxScroll.coerceAtLeast(h * 4))
             wv.scrollTo(wv.scrollX, nextY)
             captureFrame()
         }
     }
 
     fun goBack() {
-        main.post {
-            val wv = webView ?: return@post
+        postMain {
+            val wv = webView ?: return@postMain
             if (wv.canGoBack()) {
                 wv.goBack()
-                main.postDelayed({ captureFrame() }, 120L)
+                main?.postDelayed({ captureFrame() }, 120L)
             }
         }
     }
 
     fun reload() {
-        main.post {
+        errorMessage = null
+        postMain {
             webView?.reload()
-            main.postDelayed({ captureFrame() }, 120L)
+            main?.postDelayed({ captureFrame() }, 120L)
         }
     }
 
@@ -240,6 +322,18 @@ object StageWebController {
                         loadingProgress = 100
                         captureFrame()
                     }
+
+                    override fun onReceivedError(
+                        view: WebView?,
+                        request: WebResourceRequest?,
+                        error: WebResourceError?,
+                    ) {
+                        if (request?.isForMainFrame == true) {
+                            errorMessage = error?.description?.toString()?.takeIf { it.isNotBlank() }
+                                ?: "Page load failed"
+                            LiveDataStore.notifyDisplayChanged()
+                        }
+                    }
                 }
                 webChromeClient = object : WebChromeClient() {
                     override fun onProgressChanged(view: WebView?, newProgress: Int) {
@@ -266,10 +360,11 @@ object StageWebController {
 
     private fun layoutWebView() {
         val wv = webView ?: return
-        val wSpec = View.MeasureSpec.makeMeasureSpec(viewWidth, View.MeasureSpec.EXACTLY)
-        val hSpec = View.MeasureSpec.makeMeasureSpec(viewHeight, View.MeasureSpec.EXACTLY)
+        val (w, h) = synchronized(frameLock) { viewWidth to viewHeight }
+        val wSpec = View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY)
+        val hSpec = View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY)
         wv.measure(wSpec, hSpec)
-        wv.layout(0, 0, viewWidth, viewHeight)
+        wv.layout(0, 0, w, h)
     }
 
     private fun loadUrlInternal(url: String) {
@@ -285,22 +380,46 @@ object StageWebController {
         val wv = webView ?: return
         try {
             layoutWebView()
-            var bmp = buffer
-            if (bmp == null || bmp.width != viewWidth || bmp.height != viewHeight) {
-                bmp = Bitmap.createBitmap(viewWidth, viewHeight, Bitmap.Config.ARGB_8888)
-                buffer = bmp
-                bufferCanvas = Canvas(bmp)
+            val (w, h) = synchronized(frameLock) { viewWidth to viewHeight }
+            val target = synchronized(frameLock) {
+                val candidate = if (useBufferA) bufferA else bufferB
+                val allocated = if (candidate == null || candidate.width != w || candidate.height != h) {
+                    Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also {
+                        if (useBufferA) bufferA = it else bufferB = it
+                    }
+                } else {
+                    candidate
+                }
+                useBufferA = !useBufferA
+                allocated
             }
-            val c = bufferCanvas ?: return
+            val c = Canvas(target)
             c.save()
             c.drawColor(0xFF10131C.toInt())
             c.translate(-wv.scrollX.toFloat(), -wv.scrollY.toFloat())
             wv.draw(c)
             c.restore()
-            bitmap = bmp
+            synchronized(frameLock) {
+                bitmap = target
+            }
             LiveDataStore.notifyDisplayChanged()
         } catch (error: Throwable) {
             errorMessage = error.message
         }
+    }
+
+    fun setErrorForTest(message: String?) {
+        errorMessage = message
+    }
+
+    fun resetForTest() {
+        active = false
+        paused = false
+        errorMessage = null
+        bitmap = null
+        bufferA = null
+        bufferB = null
+        viewWidth = 960
+        viewHeight = 540
     }
 }

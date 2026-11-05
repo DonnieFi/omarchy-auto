@@ -203,7 +203,7 @@ class SetupActivity : Activity() {
                 theme.dim,
             ).apply { setPadding(0, dp(8), 0, dp(4)) },
         )
-        val targets = LaunchTargetStore.available(this)
+        val targets = LaunchTargetStore.stageTargets(this)
         if (targets.isEmpty()) {
             column.addView(
                 label(
@@ -219,10 +219,17 @@ class SetupActivity : Activity() {
                 setPadding(0, dp(4), 0, dp(4))
             }
             targets.forEach { target ->
+                val installed = LaunchTargetStore.isInstalled(this, target)
+                val suffix = when {
+                    target.key == "auto" -> ""
+                    target.stageApp != null && installed -> " · STAGE + APP"
+                    target.stageApp != null -> " · WEB STAGE"
+                    else -> ""
+                }
                 group.addView(
                     RadioButton(this).apply {
                         id = View.generateViewId()
-                        text = target.label
+                        text = "${target.label}$suffix"
                         textSize = 13f
                         typeface = Typeface.MONOSPACE
                         setTextColor(theme.foreground)
@@ -301,8 +308,11 @@ class SetupActivity : Activity() {
         column.addView(
             label(
                 "When the Drive stage is open, the phone's location is sent to OpenFreeMap " +
-                    "tile servers so the map can be rendered. Omarchy Auto does not store a " +
-                    "location history. There is no map-off switch yet.",
+                    "tile servers so the map can be rendered. Address searches are sent to " +
+                    "Photon (Komoot) and Nominatim (OpenStreetMap), and active route guidance " +
+                    "requests road geometry from OSRM (project-osrm.org) using your current GPS " +
+                    "origin and selected destination. Omarchy Auto does not store a location " +
+                    "history.",
                 12f,
                 theme.dim,
             ).apply { setPadding(0, dp(8), 0, dp(18)) },

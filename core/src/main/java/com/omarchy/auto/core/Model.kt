@@ -52,6 +52,7 @@ data class DashboardState(
     val longitude: Double? = null,
     val bearing: Float = 0f,
     val accuracyM: Float? = null,
+    val locationUpdatedAtMs: Long = 0L,
     val mapRevision: Int = 0,
     val displayRevision: Int = 0,
     val batteryPercent: Int? = null,

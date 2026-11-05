@@ -44,6 +44,13 @@ class MainActivity : Activity() {
                         .putExtra(SetupActivity.EXTRA_LAUNCHER, true),
                 )
             }
+            onWebAppOpenOnPhone = { activeWeb ->
+                open(
+                    listOf(activeWeb.packageName),
+                    Intent(Intent.ACTION_VIEW, Uri.parse(activeWeb.homeUrl)),
+                    activeWeb.label,
+                )
+            }
             onTileTap = { tile -> launch(tile) }
         }
         setContentView(tileView)

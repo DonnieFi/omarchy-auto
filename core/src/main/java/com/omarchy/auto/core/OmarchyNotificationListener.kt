@@ -37,12 +37,16 @@ class OmarchyNotificationListener : NotificationListenerService() {
         } catch (_: Exception) {
             emptyArray()
         }
+        val items = existing
+            .filter(::shouldShow)
+            .mapNotNull(::toItem)
+            .sortedByDescending { it.postedAt }
+        activePostedAt.clear()
+        for (item in items) {
+            activePostedAt[item.key] = item.postedAt
+        }
         LiveDataStore.replaceNotifications(
-            existing
-                .filter(::shouldShow)
-                .mapNotNull(::toItem)
-                .sortedByDescending { it.postedAt }
-                .take(LiveDataStore.MAX_NOTIFICATIONS),
+            items.take(LiveDataStore.MAX_NOTIFICATIONS),
         )
     }
 
@@ -55,11 +59,15 @@ class OmarchyNotificationListener : NotificationListenerService() {
         super.onNotificationPosted(sbn)
         LiveDataStore.setNotificationAccess(true)
         if (!shouldShow(sbn)) return
-        toItem(sbn)?.let(LiveDataStore::addNotification)
+        toItem(sbn)?.let { item ->
+            activePostedAt[item.key] = item.postedAt
+            LiveDataStore.addNotification(item)
+        }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         super.onNotificationRemoved(sbn)
+        activePostedAt.remove(sbn.key)
         LiveDataStore.removeNotification(sbn.key)
     }
 
@@ -129,6 +137,7 @@ class OmarchyNotificationListener : NotificationListenerService() {
         @Volatile
         private var instance: OmarchyNotificationListener? = null
         private val dismissedAt = ConcurrentHashMap<String, Long>()
+        private val activePostedAt = ConcurrentHashMap<String, Long>()
 
         fun isDismissed(key: String, postTime: Long): Boolean {
             val time = dismissedAt[key] ?: return false
@@ -139,8 +148,13 @@ class OmarchyNotificationListener : NotificationListenerService() {
             dismissedAt[key] = postTime
         }
 
+        fun recordActiveForTest(key: String, postTime: Long) {
+            activePostedAt[key] = postTime
+        }
+
         fun clearDismissedForTest() {
             dismissedAt.clear()
+            activePostedAt.clear()
         }
 
         fun component(context: Context): ComponentName =
@@ -159,32 +173,52 @@ class OmarchyNotificationListener : NotificationListenerService() {
             }
         }
 
-        fun dismissDisplayed(context: Context) {
+        fun dismissDisplayed(context: Context?) {
             val service = instance
             val now = System.currentTimeMillis()
+            val allKeys = LinkedHashMap<String, Long>()
+            for ((k, t) in activePostedAt) {
+                allKeys[k] = t
+            }
             for (item in LiveDataStore.state.notifications) {
-                dismissedAt[item.key] = maxOf(item.postedAt, now)
+                allKeys[item.key] = maxOf(allKeys[item.key] ?: 0L, item.postedAt)
+            }
+            val liveFromService = try {
+                service?.activeNotifications.orEmpty()
+            } catch (_: Exception) {
+                emptyArray()
+            }
+            for (sbn in liveFromService) {
+                if (service != null && service.shouldShow(sbn)) {
+                    allKeys[sbn.key] = maxOf(allKeys[sbn.key] ?: 0L, sbn.postTime)
+                }
+            }
+            for ((key, postedAt) in allKeys) {
+                dismissedAt[key] = maxOf(postedAt, now)
+                activePostedAt.remove(key)
                 try {
-                    service?.cancelNotification(item.key)
+                    service?.cancelNotification(key)
                 } catch (_: Exception) {
                     // A notification may have been removed already.
                 }
-                LiveDataStore.removeNotification(item.key)
+                LiveDataStore.removeNotification(key)
             }
-            if (service == null) rebind(context)
+            LiveDataStore.replaceNotifications(emptyList())
+            if (service == null && context != null) rebind(context)
         }
 
-        fun dismiss(context: Context, key: String) {
+        fun dismiss(context: Context?, key: String) {
             val service = instance
             val existing = LiveDataStore.state.notifications.firstOrNull { it.key == key }
-            dismissedAt[key] = maxOf(existing?.postedAt ?: 0L, System.currentTimeMillis())
+            val trackedTime = activePostedAt.remove(key) ?: 0L
+            dismissedAt[key] = maxOf(existing?.postedAt ?: trackedTime, System.currentTimeMillis())
             try {
                 service?.cancelNotification(key)
             } catch (_: Exception) {
                 // A notification may have been removed already.
             }
             LiveDataStore.removeNotification(key)
-            if (service == null) rebind(context)
+            if (service == null && context != null) rebind(context)
         }
 
         private fun rebind(context: Context) {

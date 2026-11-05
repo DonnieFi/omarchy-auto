@@ -65,16 +65,26 @@ object LiveDataStore {
     fun setMedia(
         media: MediaSnapshot?,
         access: Boolean = true,
-        sessions: List<MediaSessionItem> = state.mediaSessions,
+        sessions: List<MediaSessionItem> = if (access) state.mediaSessions else emptyList(),
     ) = update {
-        it.copy(media = media, mediaAccess = access, mediaSessions = sessions)
+        it.copy(
+            media = media,
+            mediaAccess = access,
+            mediaSessions = if (access) sessions else emptyList(),
+        )
     }
 
     fun setMediaSessions(sessions: List<MediaSessionItem>) = update {
         it.copy(mediaSessions = sessions)
     }
 
-    fun setMediaAccess(access: Boolean) = update { it.copy(mediaAccess = access) }
+    fun setMediaAccess(access: Boolean) = update {
+        it.copy(
+            mediaAccess = access,
+            media = if (access) it.media else null,
+            mediaSessions = if (access) it.mediaSessions else emptyList(),
+        )
+    }
 
     fun setNotificationAccess(access: Boolean) = update { it.copy(notificationAccess = access) }
 
@@ -91,6 +101,7 @@ object LiveDataStore {
         longitude: Double?,
         bearing: Float,
         accuracyM: Float?,
+        updatedAtMs: Long = if (gpsActive) System.currentTimeMillis() else 0L,
     ) = update {
         it.copy(
             speedKph = speedKph,
@@ -99,7 +110,12 @@ object LiveDataStore {
             longitude = longitude,
             bearing = bearing,
             accuracyM = accuracyM,
+            locationUpdatedAtMs = updatedAtMs,
         )
+    }
+
+    fun resetForTest() {
+        state = DashboardState()
     }
 
     fun notifyMapUpdated() = update { it.copy(mapRevision = it.mapRevision + 1) }

@@ -281,11 +281,21 @@ class TileRenderer {
     var railScrollOffset: Int = 0
         private set
 
+    private var notifDragAccum: Float = 0f
+    private var railDragAccum: Float = 0f
+    private var overlayDragAccum: Float = 0f
+
     @Volatile
     private var background: Bitmap? = null
 
     @Volatile
     private var overlayKey: String? = null
+
+    fun resetGestureAccumulators() {
+        notifDragAccum = 0f
+        railDragAccum = 0f
+        overlayDragAccum = 0f
+    }
 
     fun setSafeArea(rect: Rect?) {
         safeArea = rect?.let { Rect(it) }
@@ -316,6 +326,7 @@ class TileRenderer {
     }
 
     fun openWebApp(app: StageWebApp) {
+        if (!FeatureFlags.ALLOW_CAR_WEB_STAGE) return
         if (selected == TileId.MEDIA && webStageApp == app) {
             selected = null
             webStageApp = null
@@ -417,23 +428,32 @@ class TileRenderer {
     ): Boolean {
         val layout = lastLayout ?: return false
         if (overlayKey != null) {
-            if (kotlin.math.abs(dy) >= 12f) {
-                scrollOverlay(if (dy < 0f) 1 else -1)
-                return true
+            overlayDragAccum += dy
+            var moved = false
+            while (kotlin.math.abs(overlayDragAccum) >= 12f) {
+                val step = if (overlayDragAccum < 0f) 1 else -1
+                overlayDragAccum -= if (overlayDragAccum < 0f) -12f else 12f
+                scrollOverlay(step)
+                moved = true
             }
-            return false
+            return moved
         }
         if (keyboardMode != KeyboardMode.NONE) return false
         if (x > 0f && layout.railRect.contains(x, y)) {
-            if (kotlin.math.abs(dy) >= 18f) {
-                scrollRail(if (dy < 0f) 1 else -1)
-                return true
+            railDragAccum += dy
+            var moved = false
+            while (kotlin.math.abs(railDragAccum) >= 18f) {
+                val step = if (railDragAccum < 0f) 1 else -1
+                railDragAccum -= if (railDragAccum < 0f) -18f else 18f
+                scrollRail(step)
+                moved = true
             }
-            return false
+            return moved
         }
         if (x > 0f && !layout.stageRect.contains(x, y)) return false
         return when (selected) {
             TileId.DRIVE -> {
+                if (dx == 0f && dy == 0f) return false
                 val baseLat = stateLat ?: LiveDataStore.state.latitude ?: MapSnapshotStore.latitude ?: 43.6532
                 val baseLon = stateLon ?: LiveDataStore.state.longitude ?: MapSnapshotStore.longitude ?: -79.3832
                 val bearing = if (MapCameraStore.followGps) LiveDataStore.state.bearing else 0f
@@ -441,12 +461,15 @@ class TileRenderer {
                 true
             }
             TileId.COMMS -> {
-                if (kotlin.math.abs(dy) >= 16f) {
-                    scrollNotifications(if (dy < 0f) 1 else -1)
-                    true
-                } else {
-                    false
+                notifDragAccum += dy
+                var moved = false
+                while (kotlin.math.abs(notifDragAccum) >= 16f) {
+                    val step = if (notifDragAccum < 0f) 1 else -1
+                    notifDragAccum -= if (notifDragAccum < 0f) -16f else 16f
+                    scrollNotifications(step)
+                    moved = true
                 }
+                moved
             }
             TileId.MEDIA -> {
                 if (webStageApp != null) {
@@ -1672,7 +1695,9 @@ class TileRenderer {
         // Top-left maneuver / route status banner
         val navInstruction = NavigationController.currentInstruction()
         val navStatus = NavigationController.statusMessage
-        if (dest != null || navInstruction != null || navStatus != null) {
+        val navError: String? = null
+        val navState = NavigationController.navState
+        if (dest != null || navInstruction != null || navStatus != null || navError != null) {
             val bannerRight = content.right - 68f * unit
             val banner = RectF(
                 content.left + 10f * unit,
@@ -1685,32 +1710,38 @@ class TileRenderer {
             canvas.drawRoundRect(banner, 3f * unit, 3f * unit, fill)
             stroke.style = Paint.Style.STROKE
             stroke.strokeWidth = 1.5f * unit
-            stroke.color = if (NavigationController.navActive) theme.green else theme.accent
+            stroke.color = when (navState) {
+                NavState.ACTIVE -> theme.green
+                NavState.ROUTE_ERROR,
+                NavState.LOCATION_REQUIRED -> theme.red
+                else -> theme.accent
+            }
             canvas.drawRoundRect(banner, 3f * unit, 3f * unit, stroke)
 
             val primary = navInstruction ?: navStatus ?: dest?.name.orEmpty()
-            val stepDist = if (NavigationController.navActive && NavigationController.steps.isNotEmpty()) {
-                NavigationController.formatDistance(NavigationController.nextStepDistanceMeters) + " · "
-            } else {
-                ""
-            }
             text(
                 canvas,
-                "$stepDist$primary",
+                primary,
                 banner.left + 10f * unit,
                 banner.top + 22f * unit,
                 11f * unit,
-                theme.foreground,
+                when (navState) {
+                    NavState.ROUTE_ERROR,
+                    NavState.LOCATION_REQUIRED -> theme.yellow
+                    else -> theme.foreground
+                },
                 bold = true,
                 maxWidth = banner.width() - 20f * unit,
             )
-            val subline = if (NavigationController.remainingDistanceMeters > 0.0) {
+            val subline = if (navState == NavState.ACTIVE &&
+                NavigationController.remainingDistanceMeters > 0.0
+            ) {
                 val dist = NavigationController.formatDistance(NavigationController.remainingDistanceMeters)
                 val eta = NavigationController.formatDuration(NavigationController.remainingDurationSeconds)
                 val targetName = dest?.name ?: ""
                 "$dist  ·  ETA $eta  ·  $targetName"
             } else {
-                navStatus ?: dest?.displayName.orEmpty()
+                navError ?: navStatus ?: dest?.displayName.orEmpty()
             }
             text(
                 canvas,
@@ -1718,7 +1749,12 @@ class TileRenderer {
                 banner.left + 10f * unit,
                 banner.bottom - 10f * unit,
                 8.5f * unit,
-                if (NavigationController.navActive) theme.green else theme.dim,
+                when (navState) {
+                    NavState.ACTIVE -> theme.green
+                    NavState.ROUTE_ERROR,
+                    NavState.LOCATION_REQUIRED -> theme.red
+                    else -> theme.dim
+                },
                 maxWidth = banner.width() - 20f * unit,
             )
         } else if (stale) {
@@ -1804,22 +1840,32 @@ class TileRenderer {
             speedBaseline, 9f * unit, theme.dim,
         )
         val gps = when {
-            NavigationController.navActive -> "NAV ACTIVE"
+            navState == NavState.ACTIVE -> "NAV ACTIVE"
+            navState == NavState.ROUTING -> "ROUTING…"
+            navState == NavState.LOCATION_REQUIRED -> "LOCATION REQ"
+            navState == NavState.ROUTE_ERROR -> "ROUTE ERROR"
             !MapCameraStore.followGps -> "FREE PAN"
             state.gpsActive -> "GPS LIVE"
             else -> "GPS WAIT"
         }
         text(
             canvas, gps, panel.left + 12f * unit, panel.bottom - 9f * unit, 8f * unit,
-            if (state.gpsActive || NavigationController.navActive) theme.green else theme.yellow,
+            when {
+                navState == NavState.ROUTE_ERROR ||
+                    navState == NavState.LOCATION_REQUIRED -> theme.red
+                state.gpsActive || navState == NavState.ACTIVE -> theme.green
+                else -> theme.yellow
+            },
         )
 
-        // Bottom-right Search Address & Start/Stop Navigation buttons
+        // Bottom-right Search Address & Start/Stop/Retry Navigation buttons
         val btnH = 34f * unit
         val btnTop = content.bottom - 10f * unit - btnH
-        val navLabel = when {
-            NavigationController.navActive -> "STOP NAV"
-            dest != null -> "START NAV"
+        val navLabel = when (navState) {
+            NavState.ACTIVE,
+            NavState.ROUTING -> "STOP NAV"
+            NavState.ROUTE_ERROR,
+            NavState.LOCATION_REQUIRED -> "RETRY NAV"
             else -> "START NAV"
         }
         val navW = maxOf(96f * unit, measure(navLabel, 9f * unit, bold = true) + 22f * unit)
@@ -1840,7 +1886,13 @@ class TileRenderer {
             navLabel,
             theme,
             unit,
-            color = if (NavigationController.navActive) theme.red else theme.green,
+            color = when (navState) {
+                NavState.ACTIVE,
+                NavState.ROUTING -> theme.red
+                NavState.ROUTE_ERROR,
+                NavState.LOCATION_REQUIRED -> theme.yellow
+                else -> theme.green
+            },
         )
 
         return DriveHit(
@@ -1898,29 +1950,31 @@ class TileRenderer {
 
         // Stage web app pills on the right side of the bar
         var rightX = content.right
-        StageWebApp.entries.reversed().forEach { app ->
-            val label = app.title
-            val w = measure(label, 8f * unit, bold = true) + 16f * unit
-            val rect = RectF(rightX - w, content.top, rightX, content.top + barH)
-            rightX = rect.left - gap
-            webApps += app to rect
-            val active = webStageApp == app
-            fill.style = Paint.Style.FILL
-            fill.color = if (active) theme.accent else withAlpha(theme.surfaceAlt, 225)
-            canvas.drawRoundRect(rect, 2f * unit, 2f * unit, fill)
-            stroke.style = Paint.Style.STROKE
-            stroke.strokeWidth = 1f * unit
-            stroke.color = if (active) theme.accent else theme.border
-            canvas.drawRoundRect(rect, 2f * unit, 2f * unit, stroke)
-            text(
-                canvas,
-                label,
-                rect.centerX() - measure(label, 8f * unit, bold = true) / 2f,
-                rect.centerY() + 3f * unit,
-                8f * unit,
-                if (active) theme.background else theme.accent,
-                bold = true,
-            )
+        if (FeatureFlags.ALLOW_CAR_WEB_STAGE) {
+            StageWebApp.entries.reversed().forEach { app ->
+                val label = app.title
+                val w = measure(label, 8f * unit, bold = true) + 16f * unit
+                val rect = RectF(rightX - w, content.top, rightX, content.top + barH)
+                rightX = rect.left - gap
+                webApps += app to rect
+                val active = webStageApp == app
+                fill.style = Paint.Style.FILL
+                fill.color = if (active) theme.accent else withAlpha(theme.surfaceAlt, 225)
+                canvas.drawRoundRect(rect, 2f * unit, 2f * unit, fill)
+                stroke.style = Paint.Style.STROKE
+                stroke.strokeWidth = 1f * unit
+                stroke.color = if (active) theme.accent else theme.border
+                canvas.drawRoundRect(rect, 2f * unit, 2f * unit, stroke)
+                text(
+                    canvas,
+                    label,
+                    rect.centerX() - measure(label, 8f * unit, bold = true) / 2f,
+                    rect.centerY() + 3f * unit,
+                    8f * unit,
+                    if (active) theme.background else theme.accent,
+                    bold = true,
+                )
+            }
         }
 
         // Active media session switcher pills on the left side of the bar
@@ -2115,7 +2169,31 @@ class TileRenderer {
         val viewport = RectF(body.left, body.top + toolbarH + 6f * unit, body.right, body.bottom)
         StageWebController.ensureActive(app, viewport.width().toInt(), viewport.height().toInt())
         val bmp = StageWebController.bitmap
-        if (bmp != null) {
+        val webErr = StageWebController.errorMessage
+        if (webErr != null) {
+            fill.style = Paint.Style.FILL
+            fill.color = withAlpha(theme.background, 230)
+            canvas.drawRect(viewport, fill)
+            val msg = "${app.title} LOAD FAILED · TAP ↻ TO RETRY"
+            text(
+                canvas,
+                msg,
+                viewport.centerX() - measure(msg, 12f * unit, bold = true) / 2f,
+                viewport.centerY() - 4f * unit,
+                12f * unit,
+                theme.yellow,
+                bold = true,
+            )
+            text(
+                canvas,
+                webErr,
+                viewport.centerX() - measure(webErr, 9f * unit) / 2f,
+                viewport.centerY() + 16f * unit,
+                9f * unit,
+                theme.dim,
+                maxWidth = viewport.width() - 24f * unit,
+            )
+        } else if (bmp != null && !bmp.isRecycled) {
             canvas.drawBitmap(bmp, null, viewport, wallpaperPaint)
         } else {
             fill.style = Paint.Style.FILL

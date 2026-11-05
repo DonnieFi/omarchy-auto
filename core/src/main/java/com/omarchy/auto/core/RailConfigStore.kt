@@ -75,37 +75,60 @@ object RailConfigStore {
         val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs = p
         val stored = p.getStringSet(KEY_ENABLED, null)
-        enabledSet = if (stored.isNullOrEmpty()) {
-            defaultKeys()
-        } else {
-            (stored + RailItemId.HOME.key).toSet()
-        }
+        enabledSet = clampAllowedKeys(
+            if (stored.isNullOrEmpty()) {
+                defaultKeys()
+            } else {
+                stored
+            },
+        )
     }
 
-    fun allSelectable(): List<RailItemId> = RailItemId.entries
+    fun isItemAllowed(item: RailItemId): Boolean {
+        if (item == RailItemId.VEHICLE && !FeatureFlags.SHOW_VEHICLE_TILE) return false
+        if (item.webApp != null && !FeatureFlags.ALLOW_CAR_WEB_STAGE) return false
+        return true
+    }
 
-    fun configurableItems(): List<RailItemId> = RailItemId.entries
+    fun allSelectable(): List<RailItemId> =
+        RailItemId.entries.filter(::isItemAllowed)
+
+    fun configurableItems(): List<RailItemId> =
+        allSelectable()
 
     fun enabledItems(): List<RailItemId> =
-        RailItemId.entries.filter { it.key in enabledSet || it == RailItemId.HOME }
+        allSelectable().filter { it.key in enabledSet || it == RailItemId.HOME }
 
     fun isEnabled(item: RailItemId): Boolean =
-        item == RailItemId.HOME || item.key in enabledSet
+        isItemAllowed(item) && (item == RailItemId.HOME || item.key in enabledSet)
 
     fun setEnabled(context: Context, item: RailItemId, enabled: Boolean) {
         init(context)
-        if (item == RailItemId.HOME) return
+        if (item == RailItemId.HOME || !isItemAllowed(item)) return
         val next = enabledSet.toMutableSet()
         if (enabled) {
             next.add(item.key)
         } else {
             next.remove(item.key)
         }
-        next.add(RailItemId.HOME.key)
-        enabledSet = next
-        prefs?.edit()?.putStringSet(KEY_ENABLED, next)?.apply()
+        val clamped = clampAllowedKeys(next)
+        enabledSet = clamped
+        prefs?.edit()?.putStringSet(KEY_ENABLED, clamped)?.apply()
         revision++
         LiveDataStore.notifyDisplayChanged()
+    }
+
+    fun setEnabledForTest(item: RailItemId, enabled: Boolean) {
+        if (item == RailItemId.HOME || !isItemAllowed(item)) return
+        val next = enabledSet.toMutableSet()
+        if (enabled) next.add(item.key) else next.remove(item.key)
+        enabledSet = clampAllowedKeys(next)
+        revision++
+    }
+
+    fun loadKeysForTest(keys: Set<String>) {
+        enabledSet = clampAllowedKeys(keys)
+        revision++
     }
 
     fun toggle(context: Context, item: RailItemId) {
@@ -117,6 +140,11 @@ object RailConfigStore {
         revision++
     }
 
+    private fun clampAllowedKeys(keys: Set<String>): Set<String> {
+        val allowedKeys = allSelectable().map { it.key }.toSet()
+        return (keys.intersect(allowedKeys) + RailItemId.HOME.key).toSet()
+    }
+
     private fun defaultKeys(): Set<String> =
-        RailItemId.entries.filter { it.defaultEnabled }.map { it.key }.toSet()
+        allSelectable().filter { it.defaultEnabled }.map { it.key }.toSet()
 }
