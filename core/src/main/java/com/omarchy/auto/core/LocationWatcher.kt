@@ -88,7 +88,15 @@ class LocationWatcher(
         }
     }
 
+    private fun hasLocationPermission(): Boolean =
+        app.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            app.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
     private fun seedLastKnown(lm: LocationManager) {
+        if (!hasLocationPermission()) {
+            onUpdate(null, false, null, null, 0f, null)
+            return
+        }
         val providers = listOf(
             LocationManager.GPS_PROVIDER,
             LocationManager.NETWORK_PROVIDER,
@@ -97,6 +105,8 @@ class LocationWatcher(
         val best = providers.mapNotNull { provider ->
             try {
                 lm.getLastKnownLocation(provider)
+            } catch (_: SecurityException) {
+                null
             } catch (_: Exception) {
                 null
             }
