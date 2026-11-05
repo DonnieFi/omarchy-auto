@@ -15,9 +15,16 @@ import com.omarchy.auto.core.AppBackground
 import com.omarchy.auto.core.BackgroundStore
 import com.omarchy.auto.core.LaunchTargetStore
 import com.omarchy.auto.core.LiveDataStore
+import com.omarchy.auto.core.MapCameraStore
 import com.omarchy.auto.core.MediaTransport
+import com.omarchy.auto.core.MediaWatcher
+import com.omarchy.auto.core.NavigationController
+import com.omarchy.auto.core.NavState
 import com.omarchy.auto.core.OmarchyNotificationListener
+import com.omarchy.auto.core.RailConfigStore
 import com.omarchy.auto.core.SetupActivity
+import com.omarchy.auto.core.StageWebApp
+import com.omarchy.auto.core.StageWebController
 import com.omarchy.auto.core.ThemeStore
 import com.omarchy.auto.core.TileId
 import com.omarchy.auto.core.TileRenderer
@@ -53,6 +60,8 @@ class CarSurfaceRenderer(
     init {
         BackgroundStore.init(appContext)
         LaunchTargetStore.init(appContext)
+        RailConfigStore.init(appContext)
+        StageWebController.init(appContext)
         refreshBackground()
     }
 
@@ -76,6 +85,7 @@ class CarSurfaceRenderer(
     fun stop() {
         if (stopped) return
         stopped = true
+        StageWebController.setActive(false)
         handler.removeCallbacksAndMessages(null)
         thread.quitSafely()
 
@@ -109,6 +119,27 @@ class CarSurfaceRenderer(
 
     fun setSafeArea(rect: Rect?) {
         renderer.setSafeArea(rect)
+    }
+
+    fun scroll(dx: Float, dy: Float) {
+        if (stopped) return
+        handler.post {
+            if (stopped) return@post
+            val state = LiveDataStore.state
+            if (renderer.scroll(0f, 0f, dx, dy, state.latitude, state.longitude)) {
+                draw()
+            }
+        }
+    }
+
+    fun scale(scaleFactor: Float) {
+        if (stopped) return
+        handler.post {
+            if (stopped) return@post
+            if (renderer.scale(scaleFactor)) {
+                draw()
+            }
+        }
     }
 
     fun tap(x: Float, y: Float) {
@@ -150,6 +181,17 @@ class CarSurfaceRenderer(
 
                 TileRenderer.Target.NOTIF_CLEAR -> {
                     OmarchyNotificationListener.dismissDisplayed(appContext)
+                    renderer.scrollNotifications(-1000)
+                    draw()
+                }
+
+                TileRenderer.Target.NOTIF_SCROLL_UP -> {
+                    renderer.scrollNotifications(-1)
+                    draw()
+                }
+
+                TileRenderer.Target.NOTIF_SCROLL_DOWN -> {
+                    renderer.scrollNotifications(1)
                     draw()
                 }
 
@@ -171,8 +213,193 @@ class CarSurfaceRenderer(
                     draw()
                 }
 
+                TileRenderer.Target.NOTIF_ROW_DISMISS -> {
+                    hit.key?.let { OmarchyNotificationListener.dismiss(appContext, it) }
+                    draw()
+                }
+
+                TileRenderer.Target.OVERLAY_SCROLL_UP -> {
+                    renderer.scrollOverlay(-2)
+                    draw()
+                }
+
+                TileRenderer.Target.OVERLAY_SCROLL_DOWN -> {
+                    renderer.scrollOverlay(2)
+                    draw()
+                }
+
                 TileRenderer.Target.SETUP -> {
-                    startSafely(Intent(appContext, SetupActivity::class.java))
+                    renderer.toggleHomeSetup()
+                    draw()
+                }
+
+                TileRenderer.Target.RAIL_CONFIG_TOGGLE -> {
+                    hit.railItem?.let { RailConfigStore.toggle(appContext, it) }
+                    draw()
+                }
+
+                TileRenderer.Target.MEDIA_TARGET_SELECT -> {
+                    val key = hit.key ?: return@post
+                    LaunchTargetStore.select(appContext, key)
+                    StageWebApp.entries.firstOrNull { it.id == key }?.let { app ->
+                        StageWebController.selectApp(app)
+                    }
+                    draw()
+                }
+
+                TileRenderer.Target.MEDIA_SESSION_SELECT -> {
+                    val pkg = hit.key ?: return@post
+                    renderer.closeWebApp()
+                    MediaWatcher.selectSession(pkg)
+                    draw()
+                }
+
+                TileRenderer.Target.WEB_APP_OPEN -> {
+                    val app = hit.webApp ?: return@post
+                    renderer.openWebApp(app)
+                    draw()
+                }
+
+                TileRenderer.Target.WEB_BACK -> {
+                    StageWebController.goBack()
+                    draw()
+                }
+
+                TileRenderer.Target.WEB_RELOAD -> {
+                    StageWebController.reload()
+                    draw()
+                }
+
+                TileRenderer.Target.WEB_SEARCH -> {
+                    renderer.openKeyboard(TileRenderer.KeyboardMode.WEB_INPUT)
+                    draw()
+                }
+
+                TileRenderer.Target.WEB_SCROLL_UP -> {
+                    StageWebController.scrollBy(-260)
+                    draw()
+                }
+
+                TileRenderer.Target.WEB_SCROLL_DOWN -> {
+                    StageWebController.scrollBy(260)
+                    draw()
+                }
+
+                TileRenderer.Target.WEB_CLOSE -> {
+                    renderer.closeWebApp()
+                    draw()
+                }
+
+                TileRenderer.Target.WEB_STAGE_TAP -> {
+                    StageWebController.tapNormalized(hit.normX, hit.normY)
+                    draw()
+                }
+
+                TileRenderer.Target.MAP_ZOOM_IN -> {
+                    MapCameraStore.zoomIn()
+                    draw()
+                }
+
+                TileRenderer.Target.MAP_ZOOM_OUT -> {
+                    MapCameraStore.zoomOut()
+                    draw()
+                }
+
+                TileRenderer.Target.MAP_RECENTER -> {
+                    MapCameraStore.recenter()
+                    draw()
+                }
+
+                TileRenderer.Target.MAP_SEARCH_OPEN -> {
+                    renderer.openKeyboard(
+                        TileRenderer.KeyboardMode.MAP_SEARCH,
+                        NavigationController.searchQuery,
+                    )
+                    draw()
+                }
+
+                TileRenderer.Target.MAP_NAV_TOGGLE -> {
+                    when (NavigationController.navState) {
+                        NavState.ROUTE_ERROR,
+                        NavState.LOCATION_REQUIRED -> {
+                            NavigationController.retryRoute()
+                        }
+                        else -> {
+                            if (NavigationController.destination == null && !NavigationController.navActive) {
+                                renderer.openKeyboard(
+                                    TileRenderer.KeyboardMode.MAP_SEARCH,
+                                    NavigationController.searchQuery,
+                                )
+                            } else {
+                                NavigationController.toggleNavigation()
+                            }
+                        }
+                    }
+                    draw()
+                }
+
+                TileRenderer.Target.MAP_CANDIDATE_SELECT -> {
+                    val cand = NavigationController.searchResults.getOrNull(hit.index)
+                    if (cand != null) {
+                        NavigationController.selectDestination(cand, autoStartNav = true)
+                        renderer.closeKeyboard()
+                        draw()
+                    }
+                }
+
+                TileRenderer.Target.KB_KEY -> {
+                    hit.key?.let { renderer.appendKeyboardChar(it) }
+                    draw()
+                }
+
+                TileRenderer.Target.KB_BACKSPACE -> {
+                    renderer.backspaceKeyboard()
+                    draw()
+                }
+
+                TileRenderer.Target.KB_SPACE -> {
+                    renderer.appendKeyboardChar(" ")
+                    draw()
+                }
+
+                TileRenderer.Target.KB_CLEAR -> {
+                    renderer.clearKeyboard()
+                    draw()
+                }
+
+                TileRenderer.Target.KB_SUBMIT -> {
+                    when (renderer.keyboardMode) {
+                        TileRenderer.KeyboardMode.MAP_SEARCH -> {
+                            NavigationController.searchAddress(renderer.keyboardQuery)
+                        }
+                        TileRenderer.KeyboardMode.WEB_INPUT -> {
+                            StageWebController.submitQuery(renderer.keyboardQuery)
+                            renderer.closeKeyboard()
+                        }
+                        TileRenderer.KeyboardMode.NONE -> Unit
+                    }
+                    draw()
+                }
+
+                TileRenderer.Target.KB_CLOSE -> {
+                    renderer.closeKeyboard()
+                    draw()
+                }
+
+                TileRenderer.Target.RAIL_SCROLL_UP -> {
+                    renderer.scrollRail(-1)
+                    draw()
+                }
+
+                TileRenderer.Target.RAIL_SCROLL_DOWN -> {
+                    renderer.scrollRail(1)
+                    draw()
+                }
+
+                TileRenderer.Target.RAIL_ITEM -> {
+                    val item = hit.railItem ?: return@post
+                    renderer.selectRailItem(item)
+                    draw()
                 }
 
                 TileRenderer.Target.STAGE_OPEN -> {
@@ -196,7 +423,21 @@ class CarSurfaceRenderer(
             )
 
             TileId.MEDIA -> {
+                val activeWeb = renderer.webStageApp
+                if (activeWeb != null) {
+                    openTarget(
+                        listOf(activeWeb.packageName),
+                        Intent(Intent.ACTION_VIEW, Uri.parse(activeWeb.homeUrl)),
+                    )
+                    return
+                }
                 val target = LaunchTargetStore.selected(appContext)
+                val matchingWeb = StageWebApp.entries.firstOrNull { it.id == target.key }
+                if (matchingWeb != null) {
+                    renderer.openWebApp(matchingWeb)
+                    draw()
+                    return
+                }
                 openTarget(target.packages, null)
             }
 
@@ -207,10 +448,7 @@ class CarSurfaceRenderer(
 
             TileId.VEHICLE -> Unit
 
-            TileId.HOME -> openTarget(
-                emptyList(),
-                Intent(Settings.ACTION_SETTINGS),
-            )
+            TileId.HOME -> startSafely(Intent(appContext, SetupActivity::class.java))
         }
     }
 

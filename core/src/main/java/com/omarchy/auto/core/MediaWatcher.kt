@@ -26,6 +26,8 @@ class MediaWatcher(
     private val listenerComponent = OmarchyNotificationListener.component(app)
 
     private var controller: MediaController? = null
+    private var allControllers: List<MediaController> = emptyList()
+    private var preferredPackage: String? = null
     private var started = false
     private var wanted = false
     private val labelCache = mutableMapOf<String, String>()
@@ -33,7 +35,10 @@ class MediaWatcher(
     private val sessionsListener =
         MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
             if (!wanted) return@OnActiveSessionsChangedListener
-            bind(choose(controllers.orEmpty()))
+            val list = controllers.orEmpty()
+            allControllers = list
+            publishSessions(list)
+            bind(choose(list))
         }
 
     private val controllerCallback = object : MediaController.Callback() {
@@ -66,6 +71,7 @@ class MediaWatcher(
         if (wanted || started || manager == null) return
         wanted = true
         started = true
+        instance = this
         try {
             manager.addOnActiveSessionsChangedListener(
                 sessionsListener,
@@ -76,22 +82,27 @@ class MediaWatcher(
         } catch (_: SecurityException) {
             started = false
             wanted = false
+            LiveDataStore.setMediaSessions(emptyList())
             onPermissionDenied()
         } catch (_: Exception) {
             started = false
             wanted = false
+            LiveDataStore.setMediaSessions(emptyList())
             onPermissionDenied()
         }
     }
 
     fun stop() {
         if (!started && !wanted) return
+        if (instance === this) instance = null
         wanted = false
         started = false
         handler.removeCallbacks(progressTicker)
         val previous = controller
         controller?.unregisterCallback(controllerCallback)
         controller = null
+        allControllers = emptyList()
+        LiveDataStore.setMediaSessions(emptyList())
         MediaTransport.detach(previous)
         try {
             manager?.removeOnActiveSessionsChangedListener(sessionsListener)
@@ -103,25 +114,49 @@ class MediaWatcher(
     private fun bindActive() {
         if (!wanted) return
         try {
-            bind(choose(manager?.getActiveSessions(listenerComponent).orEmpty()))
+            val list = manager?.getActiveSessions(listenerComponent).orEmpty()
+            allControllers = list
+            publishSessions(list)
+            bind(choose(list))
         } catch (_: SecurityException) {
             started = false
             wanted = false
+            LiveDataStore.setMediaSessions(emptyList())
             onPermissionDenied()
         } catch (_: Exception) {
             started = false
             wanted = false
+            LiveDataStore.setMediaSessions(emptyList())
             onPermissionDenied()
         }
     }
 
+    private fun publishSessions(controllers: List<MediaController>) {
+        val items = controllers
+            .distinctBy { it.packageName }
+            .map { c ->
+                val title = c.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty()
+                MediaSessionItem(
+                    packageName = c.packageName,
+                    label = appLabel(c.packageName).uppercase(),
+                    title = title,
+                    playing = c.playbackState?.state == PlaybackState.STATE_PLAYING,
+                )
+            }
+        LiveDataStore.setMediaSessions(items)
+    }
+
     private fun choose(controllers: List<MediaController>): MediaController? {
+        val preferred = preferredPackage?.let { pkg ->
+            controllers.firstOrNull { it.packageName == pkg }
+        }
+        if (preferred != null) return preferred
         val withTitle = controllers.filter {
             !it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE).isNullOrBlank()
         }
         return withTitle.firstOrNull {
             it.playbackState?.state == PlaybackState.STATE_PLAYING
-        } ?: withTitle.firstOrNull()
+        } ?: withTitle.firstOrNull() ?: controllers.firstOrNull()
     }
 
     private fun bind(next: MediaController?) {
@@ -165,12 +200,11 @@ class MediaWatcher(
         val duration = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
         val art = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
             ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
-        val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty()
-        if (title.isBlank()) {
-            onUpdate(null)
-            return
-        }
+        val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
+            .orEmpty()
+            .ifBlank { appLabel(current.packageName) }
 
+        publishSessions(allControllers)
         onUpdate(
             MediaSnapshot(
                 title = title,
@@ -180,9 +214,26 @@ class MediaWatcher(
                 positionMs = position,
                 durationMs = duration,
                 source = appLabel(current.packageName),
+                packageName = current.packageName,
                 art = art,
             ),
         )
+    }
+
+    private fun selectPackageInternal(packageName: String) {
+        handler.post {
+            preferredPackage = packageName
+            bindActive()
+            val selected = controller
+            if (selected != null && selected.packageName == packageName &&
+                selected.playbackState?.state != PlaybackState.STATE_PLAYING
+            ) {
+                try {
+                    selected.transportControls.play()
+                } catch (_: Exception) {
+                }
+            }
+        }
     }
 
     private fun appLabel(pkg: String): String = labelCache.getOrPut(pkg) {
@@ -200,6 +251,15 @@ class MediaWatcher(
             pm.getApplicationLabel(info).toString()
         } catch (_: Exception) {
             pkg.substringAfterLast('.')
+        }
+    }
+
+    companion object {
+        @Volatile
+        private var instance: MediaWatcher? = null
+
+        fun selectSession(packageName: String) {
+            instance?.selectPackageInternal(packageName)
         }
     }
 }

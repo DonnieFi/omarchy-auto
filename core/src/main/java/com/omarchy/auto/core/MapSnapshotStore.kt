@@ -27,10 +27,26 @@ object MapSnapshotStore {
     var longitude: Double? = null
         private set
 
-    fun set(bitmap: Bitmap, lat: Double, lon: Double) {
+    @Volatile
+    var zoom: Double = MapCameraStore.DEFAULT_ZOOM
+        private set
+
+    @Volatile
+    var bearing: Float = 0f
+        private set
+
+    fun set(
+        bitmap: Bitmap,
+        lat: Double,
+        lon: Double,
+        zoom: Double = MapCameraStore.zoom,
+        bearing: Float = 0f,
+    ) {
         this.bitmap = bitmap
         latitude = lat
         longitude = lon
+        this.zoom = zoom
+        this.bearing = bearing
         error = null
         updatedAt = System.currentTimeMillis()
     }

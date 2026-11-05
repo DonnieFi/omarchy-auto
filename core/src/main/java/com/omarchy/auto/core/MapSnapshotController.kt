@@ -33,6 +33,8 @@ class MapSnapshotController(context: Context) {
     private var lastLat: Double? = null
     private var lastLon: Double? = null
     private var lastBearing = 0f
+    private var lastCameraRevision = -1
+    private var pendingCameraUpdate = false
 
     private val listener: (DashboardState) -> Unit = { state ->
         if (started) {
@@ -81,25 +83,41 @@ class MapSnapshotController(context: Context) {
 
     private fun onState(state: DashboardState) {
         if (!MapViewport.active) return
-        val lat = state.latitude ?: MapSnapshotStore.latitude ?: DEFAULT_LAT
-        val lon = state.longitude ?: MapSnapshotStore.longitude ?: DEFAULT_LON
+        val lat = MapCameraStore.targetLat(
+            state.latitude,
+            MapSnapshotStore.latitude ?: DEFAULT_LAT,
+        )
+        val lon = MapCameraStore.targetLon(
+            state.longitude,
+            MapSnapshotStore.longitude ?: DEFAULT_LON,
+        )
+        val zoom = MapCameraStore.zoom
+        val bearing = if (MapCameraStore.followGps) state.bearing else 0f
+        val cameraChanged = MapCameraStore.revision != lastCameraRevision
         val now = SystemClock.elapsedRealtime()
-        if (inFlight) return
-        if (now < retryAt) return
+        if (inFlight) {
+            if (cameraChanged) pendingCameraUpdate = true
+            return
+        }
+        if (now < retryAt && !cameraChanged) return
         val width = MapViewport.width.coerceAtLeast(320)
         val height = MapViewport.height.coerceAtLeast(240)
         val needsInitial = MapSnapshotStore.bitmap == null ||
             width != snapshotWidth ||
-            height != snapshotHeight
+            height != snapshotHeight ||
+            cameraChanged ||
+            pendingCameraUpdate
         if (!needsInitial) {
             if (now - lastRequestAt < MIN_INTERVAL_MS) return
-            if (!movedEnough(lat, lon, state.bearing)) return
+            if (!movedEnough(lat, lon, bearing)) return
         }
+        pendingCameraUpdate = false
+        lastCameraRevision = MapCameraStore.revision
         lastRequestAt = now
         lastLat = lat
         lastLon = lon
-        lastBearing = state.bearing
-        request(lat, lon, state.bearing)
+        lastBearing = bearing
+        request(lat, lon, zoom, bearing)
     }
 
     private fun movedEnough(lat: Double, lon: Double, bearing: Float): Boolean {
@@ -111,11 +129,11 @@ class MapSnapshotController(context: Context) {
         return distance[0] >= 20f || turn >= 20f
     }
 
-    private fun request(lat: Double, lon: Double, bearing: Float) {
+    private fun request(lat: Double, lon: Double, zoom: Double, bearing: Float) {
         inFlight = true
         val camera = CameraPosition.Builder()
             .target(LatLng(lat, lon))
-            .zoom(ZOOM)
+            .zoom(zoom)
             .bearing(bearing.toDouble())
             .build()
         try {
@@ -137,10 +155,13 @@ class MapSnapshotController(context: Context) {
             }
             snapshotter?.start(
                 { snapshot: MapSnapshot ->
-                    MapSnapshotStore.set(snapshot.bitmap, lat, lon)
+                    MapSnapshotStore.set(snapshot.bitmap, lat, lon, zoom, bearing)
                     retryAt = 0L
                     inFlight = false
                     LiveDataStore.notifyMapUpdated()
+                    if (pendingCameraUpdate || MapCameraStore.revision != lastCameraRevision) {
+                        main.postDelayed({ if (started) onState(LiveDataStore.state) }, 120L)
+                    }
                 },
                 { error: String ->
                     fail(error)

@@ -45,6 +45,7 @@ class SetupActivity : Activity() {
         DisplaySettings.init(this)
         BackgroundStore.init(this)
         LaunchTargetStore.init(this)
+        RailConfigStore.init(this)
         NotificationSettings.init(this)
         OaLog.init(this)
         isLauncher = intent.getBooleanExtra(EXTRA_LAUNCHER, false)
@@ -161,16 +162,48 @@ class SetupActivity : Activity() {
         column.addView(notificationSources)
 
         column.addView(space(16))
-        column.addView(label("MEDIA TILE APP", 12f, theme.dim, letterSpacing = 0.12f))
+        column.addView(label("RIGHT RAIL TILES & APPS", 12f, theme.dim, letterSpacing = 0.12f))
         column.addView(
             label(
-                "Choose what OPEN PLAYER launches on the phone. Android Auto uses the " +
-                    "active media session; tapping OPEN PLAYER opens the selected app on the phone.",
+                "Choose which tiles and apps appear in the right-side rail. When more than " +
+                    "4 items are selected, the rail scrolls with ▲ / ▼ controls.",
                 12f,
                 theme.dim,
             ).apply { setPadding(0, dp(8), 0, dp(4)) },
         )
-        val targets = LaunchTargetStore.available(this)
+        RailConfigStore.allSelectable().forEach { railItem ->
+            column.addView(
+                CheckBox(this).apply {
+                    text = "${railItem.title} · ${railItem.subtitle}"
+                    textSize = 13f
+                    typeface = Typeface.MONOSPACE
+                    setTextColor(theme.foreground)
+                    buttonTintList = ColorStateList.valueOf(theme.accent)
+                    isChecked = RailConfigStore.isEnabled(railItem)
+                    isEnabled = railItem != RailItemId.HOME
+                    gravity = Gravity.CENTER_VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        dp(46),
+                    )
+                    setOnCheckedChangeListener { _, checked ->
+                        RailConfigStore.setEnabled(this@SetupActivity, railItem, checked)
+                    }
+                },
+            )
+        }
+
+        column.addView(space(16))
+        column.addView(label("MEDIA TILE APP", 12f, theme.dim, letterSpacing = 0.12f))
+        column.addView(
+            label(
+                "Choose the active app for the Media stage and OPEN PLAYER action. " +
+                    "YouTube, ChatGPT, and Grok can also open directly inside the car stage.",
+                12f,
+                theme.dim,
+            ).apply { setPadding(0, dp(8), 0, dp(4)) },
+        )
+        val targets = LaunchTargetStore.stageTargets(this)
         if (targets.isEmpty()) {
             column.addView(
                 label(
@@ -186,10 +219,17 @@ class SetupActivity : Activity() {
                 setPadding(0, dp(4), 0, dp(4))
             }
             targets.forEach { target ->
+                val installed = LaunchTargetStore.isInstalled(this, target)
+                val suffix = when {
+                    target.key == "auto" -> ""
+                    target.stageApp != null && installed -> " · STAGE + APP"
+                    target.stageApp != null -> " · WEB STAGE"
+                    else -> ""
+                }
                 group.addView(
                     RadioButton(this).apply {
                         id = View.generateViewId()
-                        text = target.label
+                        text = "${target.label}$suffix"
                         textSize = 13f
                         typeface = Typeface.MONOSPACE
                         setTextColor(theme.foreground)
@@ -268,8 +308,11 @@ class SetupActivity : Activity() {
         column.addView(
             label(
                 "When the Drive stage is open, the phone's location is sent to OpenFreeMap " +
-                    "tile servers so the map can be rendered. Omarchy Auto does not store a " +
-                    "location history. There is no map-off switch yet.",
+                    "tile servers so the map can be rendered. Address searches are sent to " +
+                    "Photon (Komoot) and Nominatim (OpenStreetMap), and active route guidance " +
+                    "requests road geometry from OSRM (project-osrm.org) using your current GPS " +
+                    "origin and selected destination. Omarchy Auto does not store a location " +
+                    "history.",
                 12f,
                 theme.dim,
             ).apply { setPadding(0, dp(8), 0, dp(18)) },

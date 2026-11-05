@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Reads notifications for the Comms tile. This is the same component in both
@@ -36,12 +37,16 @@ class OmarchyNotificationListener : NotificationListenerService() {
         } catch (_: Exception) {
             emptyArray()
         }
+        val items = existing
+            .filter(::shouldShow)
+            .mapNotNull(::toItem)
+            .sortedByDescending { it.postedAt }
+        activePostedAt.clear()
+        for (item in items) {
+            activePostedAt[item.key] = item.postedAt
+        }
         LiveDataStore.replaceNotifications(
-            existing
-                .filter(::shouldShow)
-                .mapNotNull(::toItem)
-                .sortedByDescending { it.postedAt }
-                .take(8),
+            items.take(LiveDataStore.MAX_NOTIFICATIONS),
         )
     }
 
@@ -54,11 +59,15 @@ class OmarchyNotificationListener : NotificationListenerService() {
         super.onNotificationPosted(sbn)
         LiveDataStore.setNotificationAccess(true)
         if (!shouldShow(sbn)) return
-        toItem(sbn)?.let(LiveDataStore::addNotification)
+        toItem(sbn)?.let { item ->
+            activePostedAt[item.key] = item.postedAt
+            LiveDataStore.addNotification(item)
+        }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         super.onNotificationRemoved(sbn)
+        activePostedAt.remove(sbn.key)
         LiveDataStore.removeNotification(sbn.key)
     }
 
@@ -83,6 +92,8 @@ class OmarchyNotificationListener : NotificationListenerService() {
     private fun shouldShow(sbn: StatusBarNotification): Boolean {
         NotificationSettings.recordPackage(this, sbn.packageName)
         if (sbn.packageName == packageName) return false
+        val dismissedTime = dismissedAt[sbn.key]
+        if (dismissedTime != null && sbn.postTime <= dismissedTime) return false
         if (!NotificationSettings.isPackageAllowed(sbn.packageName)) return false
         if (NotificationSettings.isSensitivePackage(sbn.packageName)) return false
         val n = sbn.notification
@@ -125,6 +136,26 @@ class OmarchyNotificationListener : NotificationListenerService() {
     companion object {
         @Volatile
         private var instance: OmarchyNotificationListener? = null
+        private val dismissedAt = ConcurrentHashMap<String, Long>()
+        private val activePostedAt = ConcurrentHashMap<String, Long>()
+
+        fun isDismissed(key: String, postTime: Long): Boolean {
+            val time = dismissedAt[key] ?: return false
+            return postTime <= time
+        }
+
+        fun markDismissed(key: String, postTime: Long = System.currentTimeMillis()) {
+            dismissedAt[key] = postTime
+        }
+
+        fun recordActiveForTest(key: String, postTime: Long) {
+            activePostedAt[key] = postTime
+        }
+
+        fun clearDismissedForTest() {
+            dismissedAt.clear()
+            activePostedAt.clear()
+        }
 
         fun component(context: Context): ComponentName =
             ComponentName(context, OmarchyNotificationListener::class.java)
@@ -142,28 +173,52 @@ class OmarchyNotificationListener : NotificationListenerService() {
             }
         }
 
-        fun dismissDisplayed(context: Context) {
+        fun dismissDisplayed(context: Context?) {
             val service = instance
+            val now = System.currentTimeMillis()
+            val allKeys = LinkedHashMap<String, Long>()
+            for ((k, t) in activePostedAt) {
+                allKeys[k] = t
+            }
             for (item in LiveDataStore.state.notifications) {
+                allKeys[item.key] = maxOf(allKeys[item.key] ?: 0L, item.postedAt)
+            }
+            val liveFromService = try {
+                service?.activeNotifications.orEmpty()
+            } catch (_: Exception) {
+                emptyArray()
+            }
+            for (sbn in liveFromService) {
+                if (service != null && service.shouldShow(sbn)) {
+                    allKeys[sbn.key] = maxOf(allKeys[sbn.key] ?: 0L, sbn.postTime)
+                }
+            }
+            for ((key, postedAt) in allKeys) {
+                dismissedAt[key] = maxOf(postedAt, now)
+                activePostedAt.remove(key)
                 try {
-                    service?.cancelNotification(item.key)
+                    service?.cancelNotification(key)
                 } catch (_: Exception) {
                     // A notification may have been removed already.
                 }
-                LiveDataStore.removeNotification(item.key)
+                LiveDataStore.removeNotification(key)
             }
-            if (service == null) rebind(context)
+            LiveDataStore.replaceNotifications(emptyList())
+            if (service == null && context != null) rebind(context)
         }
 
-        fun dismiss(context: Context, key: String) {
+        fun dismiss(context: Context?, key: String) {
             val service = instance
+            val existing = LiveDataStore.state.notifications.firstOrNull { it.key == key }
+            val trackedTime = activePostedAt.remove(key) ?: 0L
+            dismissedAt[key] = maxOf(existing?.postedAt ?: trackedTime, System.currentTimeMillis())
             try {
                 service?.cancelNotification(key)
             } catch (_: Exception) {
                 // A notification may have been removed already.
             }
             LiveDataStore.removeNotification(key)
-            if (service == null) rebind(context)
+            if (service == null && context != null) rebind(context)
         }
 
         private fun rebind(context: Context) {

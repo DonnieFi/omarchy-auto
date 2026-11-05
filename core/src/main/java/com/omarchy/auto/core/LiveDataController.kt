@@ -15,6 +15,9 @@ class LiveDataController(context: Context) {
     fun start() {
         if (started) return
         started = true
+        RailConfigStore.init(app)
+        LaunchTargetStore.init(app)
+        StageWebController.init(app)
 
         LiveDataStore.setNotificationAccess(NotificationAccess.isEnabled(app))
         LiveDataStore.setLocation(
@@ -33,11 +36,15 @@ class LiveDataController(context: Context) {
         ).also { it.start() }
 
         location = LocationWatcher(app) { speed, active, latitude, longitude, bearing, accuracy ->
-            LiveDataStore.setLocationFix(speed, active, latitude, longitude, bearing, accuracy)
+            val now = if (active) System.currentTimeMillis() else 0L
+            LiveDataStore.setLocationFix(speed, active, latitude, longitude, bearing, accuracy, now)
             LiveDataStore.setLocation(
                 app.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
                     PackageManager.PERMISSION_GRANTED,
             )
+            if (active) {
+                NavigationController.onLocationUpdate(latitude, longitude, accuracy, now)
+            }
         }.also { it.start() }
 
         battery = BatteryWatcher(app) { percent, charging ->
@@ -50,6 +57,7 @@ class LiveDataController(context: Context) {
     fun stop() {
         if (!started) return
         started = false
+        StageWebController.setActive(false)
         map?.stop()
         battery?.stop()
         media?.stop()
