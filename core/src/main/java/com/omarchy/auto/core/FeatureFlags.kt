@@ -5,9 +5,9 @@ object FeatureFlags {
     const val SHOW_VEHICLE_TILE = false
 
     /**
-     * Enables interactive offscreen WebView stages (YouTube, ChatGPT, Grok) on
-     * the car surface for sideloaded/parked use. Disable before submitting a
-     * NAVIGATION-category build to Google Play.
+     * Phone-launcher WebView stages (YouTube, ChatGPT, Grok). The Android Auto
+     * navigation surface never embeds these, parked or driving. A car session
+     * also suppresses them until the host reports parked. See CarPlatformPolicy.
      */
     @Volatile
     var ALLOW_CAR_WEB_STAGE = true

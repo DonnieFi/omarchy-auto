@@ -81,6 +81,21 @@ class TileRenderer {
         TILE_HOME,
     }
 
+    data class FrameInfo(
+        val mode: Mode,
+        val mapFillsCanvas: Boolean,
+        val drawsCustomRail: Boolean,
+        val drawsManeuverBanner: Boolean,
+        val drawsKeyboard: Boolean,
+        val drawsNotificationList: Boolean,
+        val drawsWebStage: Boolean,
+        val drawsWallpaper: Boolean,
+    )
+
+    @Volatile
+    var lastFrame: FrameInfo? = null
+        private set
+
     data class Hit(
         val target: Target,
         val index: Int = -1,
@@ -326,7 +341,7 @@ class TileRenderer {
     }
 
     fun openWebApp(app: StageWebApp) {
-        if (!FeatureFlags.ALLOW_CAR_WEB_STAGE) return
+        if (!CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.PHONE)) return
         if (selected == TileId.MEDIA && webStageApp == app) {
             selected = null
             webStageApp = null
@@ -361,9 +376,11 @@ class TileRenderer {
         overlayKey = null
     }
 
-    fun openKeyboard(mode: KeyboardMode, initialQuery: String = "") {
+    fun openKeyboard(mode: KeyboardMode, initialQuery: String = ""): Boolean {
+        if (!CarPlatformPolicy.allowsCustomKeyboard(CarPlatformPolicy.Surface.PHONE)) return false
         keyboardMode = mode
         keyboardQuery = initialQuery
+        return true
     }
 
     fun closeKeyboard() {
@@ -456,11 +473,12 @@ class TileRenderer {
                 if (dx == 0f && dy == 0f) return false
                 val baseLat = stateLat ?: LiveDataStore.state.latitude ?: MapSnapshotStore.latitude ?: 43.6532
                 val baseLon = stateLon ?: LiveDataStore.state.longitude ?: MapSnapshotStore.longitude ?: -79.3832
-                val bearing = if (MapCameraStore.followGps) LiveDataStore.state.bearing else 0f
+                val bearing = MapCameraStore.cameraBearing(LiveDataStore.state.bearing)
                 MapCameraStore.panByPixels(-dx, -dy, baseLat, baseLon, bearing)
                 true
             }
             TileId.COMMS -> {
+                if (!CarPlatformPolicy.allowsCommsBrowsing(CarPlatformPolicy.Surface.PHONE)) return false
                 notifDragAccum += dy
                 var moved = false
                 while (kotlin.math.abs(notifDragAccum) >= 16f) {
@@ -499,6 +517,15 @@ class TileRenderer {
         themeIndex: Int,
         mode: Mode,
     ) {
+        if (mode == Mode.CAR) {
+            drawCarNavigationSurface(canvas, width, height, state, themeIndex)
+            return
+        }
+        if (DistractionLock.suppressesSharedDistractions()) {
+            if (keyboardMode != KeyboardMode.NONE) closeKeyboard()
+            if (overlayKey != null) closeNotification()
+            if (webStageApp != null) closeWebApp()
+        }
         val theme = Themes.at(themeIndex)
         val car = mode == Mode.CAR
         val area = if (car) {
@@ -571,7 +598,7 @@ class TileRenderer {
             allRailItems
         }
 
-        val scrollBtnH = if (hasRailScroll) (if (car) 34f else 24f) * unit else 0f
+        val scrollBtnH = if (hasRailScroll) (if (car) 48f else 48f) * unit else 0f
         val railScrollUpRect = if (hasRailScroll) {
             RectF(railX, tileTop, railX + railWidth, tileTop + scrollBtnH)
         } else {
@@ -712,6 +739,17 @@ class TileRenderer {
             railItems = railRects.map { it.first to RectF(it.second) },
             tiles = legacyTiles,
             keyboardHit = keyboardHit,
+        )
+        lastFrame = FrameInfo(
+            mode = mode,
+            mapFillsCanvas = false,
+            drawsCustomRail = true,
+            drawsManeuverBanner = selected == TileId.DRIVE &&
+                CarPlatformPolicy.allowsCanvasManeuverText(CarPlatformPolicy.Surface.PHONE),
+            drawsKeyboard = keyboardHit != null,
+            drawsNotificationList = selected == TileId.COMMS && stageHit.notifications.isNotEmpty(),
+            drawsWebStage = webStageApp != null,
+            drawsWallpaper = true,
         )
     }
 
@@ -1119,10 +1157,19 @@ class TileRenderer {
                 driveHit = drawDrive(canvas, content, theme, state, stageUnit)
             }
             TileId.MEDIA -> {
+                if (webStageApp != null &&
+                    !CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.PHONE)
+                ) {
+                    closeWebApp()
+                }
                 mediaHit = drawMedia(canvas, content, theme, state, stageUnit)
             }
             TileId.COMMS -> {
-                commsHit = drawComms(canvas, content, theme, state, stageUnit)
+                if (!CarPlatformPolicy.allowsCommsBrowsing(CarPlatformPolicy.Surface.PHONE)) {
+                    drawLockedPlate(canvas, content, theme, stageUnit, "NOTIFICATIONS LOCKED WHILE DRIVING")
+                } else {
+                    commsHit = drawComms(canvas, content, theme, state, stageUnit)
+                }
             }
             TileId.VEHICLE -> drawVehicle(canvas, content, theme, state, stageUnit)
             TileId.HOME -> {
@@ -1202,6 +1249,28 @@ class TileRenderer {
             webScrollUp = mediaHit.webScrollUp,
             webScrollDown = mediaHit.webScrollDown,
             webClose = mediaHit.webClose,
+        )
+    }
+
+    private fun drawLockedPlate(
+        canvas: Canvas,
+        content: RectF,
+        theme: OmarchyTheme,
+        unit: Float,
+        message: String,
+    ) {
+        fill.style = Paint.Style.FILL
+        fill.color = withAlpha(theme.background, 230)
+        canvas.drawRoundRect(content, 4f * unit, 4f * unit, fill)
+        text(
+            canvas,
+            message,
+            content.centerX() - measure(message, 14f * unit, bold = true) / 2f,
+            content.centerY(),
+            14f * unit,
+            theme.yellow,
+            bold = true,
+            maxWidth = content.width() - 24f * unit,
         )
     }
 
@@ -1537,20 +1606,177 @@ class TileRenderer {
         return x + width + 9f * unit
     }
 
-    private fun drawDrive(
+    private data class MapLayerResult(val stale: Boolean, val zoom: Double)
+
+    private fun drawCarNavigationSurface(
+        canvas: Canvas,
+        width: Int,
+        height: Int,
+        state: DashboardState,
+        themeIndex: Int,
+    ) {
+        val theme = Themes.at(themeIndex)
+        // This renderer instance is the car surface. Clear distractions it owns
+        // once, not on every frame. StageWebController is process-global and is
+        // also the phone WebView, so a quiet car frame must not stop it.
+        if (webStageApp != null) closeWebApp()
+        if (keyboardMode != KeyboardMode.NONE) closeKeyboard()
+        if (overlayKey != null) closeNotification()
+        selected = TileId.DRIVE
+        homeSetupOpen = false
+        val wasMapActive = MapViewport.active
+        MapViewport.active = true
+        val area = RectF(0f, 0f, width.toFloat(), height.toFloat())
+        canvas.drawColor(theme.background)
+        val landscape = area.width() > area.height() * 1.25f
+        val rawUnit = if (landscape) {
+            minOf(area.width() / 1280f, area.height() / 720f)
+        } else {
+            area.width() / 720f
+        }
+        val unit = rawUnit.coerceAtLeast(0.45f)
+        drawMapLayer(canvas, area, theme, state, unit)
+        val overlay = carOverlayRect(area, unit)
+        drawCompactSpeed(canvas, overlay, theme, state, unit, alignBottom = true)
+        val credit = "OpenFreeMap · OSM"
+        val creditSize = 11f * unit
+        val speedPanelH = 58f * unit
+        text(
+            canvas,
+            credit,
+            overlay.right - measure(credit, creditSize) - 4f * unit,
+            overlay.bottom - speedPanelH - 8f * unit,
+            creditSize,
+            withAlpha(theme.foreground, 200),
+        )
+        if (wasMapActive != MapViewport.active) {
+            LiveDataStore.notifyDisplayChanged()
+        }
+        lastLayout = Layout(
+            stageRect = RectF(area),
+            railRect = RectF(),
+            themeButton = null,
+            setupButton = null,
+            chips = emptyList(),
+            railToggles = emptyList(),
+            mediaTargets = emptyList(),
+            stageOpen = null,
+            playPause = null,
+            prevTrack = null,
+            nextTrack = null,
+            mediaSessions = emptyList(),
+            webAppButtons = emptyList(),
+            webBack = null,
+            webReload = null,
+            webSearch = null,
+            webScrollUp = null,
+            webScrollDown = null,
+            webClose = null,
+            webStageRect = null,
+            notifRefresh = null,
+            notifClear = null,
+            notifScrollUp = null,
+            notifScrollDown = null,
+            notifDismissRows = emptyList(),
+            notifications = emptyList(),
+            notifCard = null,
+            notifClose = null,
+            notifDismissOne = null,
+            overlayScrollUp = null,
+            overlayScrollDown = null,
+            mapZoomIn = null,
+            mapZoomOut = null,
+            mapRecenter = null,
+            mapSearchOpen = null,
+            mapNavToggle = null,
+            railScrollUp = null,
+            railScrollDown = null,
+            railItems = emptyList(),
+            tiles = emptyMap(),
+            keyboardHit = null,
+        )
+        lastFrame = FrameInfo(
+            mode = Mode.CAR,
+            mapFillsCanvas = true,
+            drawsCustomRail = false,
+            drawsManeuverBanner = false,
+            drawsKeyboard = false,
+            drawsNotificationList = false,
+            drawsWebStage = false,
+            drawsWallpaper = false,
+        )
+    }
+
+    /**
+     * Speed and attribution sit in the host stable area. Callers pass that
+     * rect via [setSafeArea] from onStableAreaChanged. Until the host reports
+     * one, the overlay uses the full surface.
+     */
+    private fun carOverlayRect(area: RectF, unit: Float): RectF {
+        val raw = safeArea
+        val base = if (raw != null && raw.width() > 80 && raw.height() > 80) {
+            RectF(
+                raw.left.toFloat().coerceIn(area.left, area.right),
+                raw.top.toFloat().coerceIn(area.top, area.bottom),
+                raw.right.toFloat().coerceIn(area.left, area.right),
+                raw.bottom.toFloat().coerceIn(area.top, area.bottom),
+            )
+        } else {
+            area
+        }
+        val inset = 16f * unit
+        val inner = RectF(base.left + inset, base.top + inset, base.right - inset, base.bottom - inset)
+        return if (inner.width() > 48f && inner.height() > 48f) inner else area
+    }
+
+    private fun drawCompactSpeed(
+        canvas: Canvas,
+        overlay: RectF,
+        theme: OmarchyTheme,
+        state: DashboardState,
+        unit: Float,
+        alignBottom: Boolean,
+    ) {
+        val panelH = 58f * unit
+        val panelW = 132f * unit
+        val top = if (alignBottom) overlay.bottom - panelH else overlay.top
+        val panel = RectF(overlay.left, top, overlay.left + panelW, top + panelH)
+        fill.style = Paint.Style.FILL
+        fill.color = withAlpha(theme.background, 225)
+        canvas.drawRoundRect(panel, 4f * unit, 4f * unit, fill)
+        stroke.style = Paint.Style.STROKE
+        stroke.strokeWidth = 1.5f * unit
+        stroke.color = theme.border
+        canvas.drawRoundRect(panel, 4f * unit, 4f * unit, stroke)
+        val speedText = state.speedKph?.let { "%.0f".format(Locale.US, it) } ?: "--"
+        val baseline = panel.top + 32f * unit
+        text(canvas, speedText, panel.left + 10f * unit, baseline, 26f * unit, theme.foreground, bold = true)
+        text(
+            canvas,
+            "km/h",
+            panel.left + 12f * unit + measure(speedText, 26f * unit, bold = true),
+            baseline,
+            10f * unit,
+            theme.dim,
+        )
+        val label = when {
+            !MapCameraStore.followGps -> "PAN"
+            MapCameraStore.orientation == MapCameraStore.Orientation.NORTH_UP -> "NORTH"
+            state.gpsActive -> "FOLLOW"
+            else -> "NO FIX"
+        }
+        text(canvas, label, panel.left + 10f * unit, panel.bottom - 8f * unit, 11f * unit, theme.accent, bold = true)
+    }
+
+    private fun drawMapLayer(
         canvas: Canvas,
         content: RectF,
         theme: OmarchyTheme,
         state: DashboardState,
         unit: Float,
-    ): DriveHit {
+    ): MapLayerResult {
         publishMapViewport(content)
         val map = MapSnapshotStore.bitmap
-        val mapAgeMs = if (map != null) {
-            (System.currentTimeMillis() - MapSnapshotStore.updatedAt).coerceAtLeast(0L)
-        } else {
-            Long.MAX_VALUE
-        }
         val (camLat, camLon) = MapCameraStore.effectiveCenter(state.latitude, state.longitude)
         val camZoom = MapCameraStore.zoom
         val snapshotLat = MapSnapshotStore.latitude
@@ -1564,42 +1790,23 @@ class TileRenderer {
         }
         val zoomDelta = kotlin.math.abs(MapSnapshotStore.zoom - camZoom)
         val stale = map != null && (
-            (mapAgeMs > STALE_AFTER_MS && movedMeters > 30f) ||
-                movedMeters > 120f ||
-                zoomDelta >= 0.45
+            movedMeters >= MapFollowPolicy.MOVE_METERS || zoomDelta >= 0.45
             )
         if (map != null) {
             drawCenterCrop(canvas, map, content)
-            fill.style = Paint.Style.FILL
-            fill.color = withAlpha(theme.background, (theme.scrimAlpha * 0.45f).toInt().coerceIn(20, 80))
-            canvas.drawRect(content, fill)
         } else {
             fill.style = Paint.Style.FILL
-            fill.color = withAlpha(theme.surfaceAlt, 118)
+            fill.color = withAlpha(theme.surfaceAlt, 140)
             canvas.drawRect(content, fill)
-
-            fill.color = Color.argb(12, 255, 255, 255)
-            val step = 34f * unit
-            var x = content.left
-            while (x < content.right) {
-                canvas.drawRect(x, content.top, x + 1f, content.bottom, fill)
-                x += step
-            }
-            var y = content.top
-            while (y < content.bottom) {
-                canvas.drawRect(content.left, y, content.right, y + 1f, fill)
-                y += step
-            }
-
             val message = when {
-                MapSnapshotStore.error != null -> "MAP OFFLINE · GRID VIEW"
-                else -> "MAP LOADING…"
+                MapSnapshotStore.error != null -> "MAP OFFLINE"
+                else -> "MAP LOADING"
             }
             text(
                 canvas,
                 message,
                 content.centerX() - measure(message, 16f * unit, bold = true) / 2f,
-                content.centerY() + 5f * unit,
+                content.centerY(),
                 16f * unit,
                 if (MapSnapshotStore.error != null) theme.yellow else theme.dim,
                 bold = true,
@@ -1609,11 +1816,8 @@ class TileRenderer {
         val projLat = snapshotLat ?: camLat
         val projLon = snapshotLon ?: camLon
         val projZoom = if (map != null) MapSnapshotStore.zoom else camZoom
-
         canvas.save()
         canvas.clipRect(content)
-
-        // Draw active navigation route polyline if available
         val routePts = NavigationController.routePoints
         if (routePts.size >= 2) {
             route.reset()
@@ -1634,12 +1838,10 @@ class TileRenderer {
             stroke.strokeWidth = 7f * unit
             stroke.color = withAlpha(theme.background, 210)
             canvas.drawPath(route, stroke)
-            stroke.strokeWidth = 4f * unit
+            stroke.strokeWidth = 4.5f * unit
             stroke.color = theme.accent
             canvas.drawPath(route, stroke)
         }
-
-        // Draw destination marker if set
         val dest = NavigationController.destination
         if (dest != null) {
             val (dx, dy) = MapCameraStore.projectToScreen(
@@ -1654,8 +1856,6 @@ class TileRenderer {
             stroke.color = theme.foreground
             canvas.drawCircle(dx, dy, 8f * unit, stroke)
         }
-
-        // Draw crosshair when panned away from GPS
         if (!MapCameraStore.followGps) {
             val cx = content.centerX()
             val cy = content.centerY()
@@ -1666,45 +1866,61 @@ class TileRenderer {
             canvas.drawLine(cx - 14f * unit, cy, cx + 14f * unit, cy, stroke)
             canvas.drawLine(cx, cy - 14f * unit, cx, cy + 14f * unit, stroke)
         }
-
-        // Draw GPS puck at projected location
         if (state.gpsActive && state.latitude != null && state.longitude != null) {
             val (cx, cy) = MapCameraStore.projectToScreen(
                 state.latitude, state.longitude, projLat, projLon, projZoom,
                 content.centerX(), content.centerY(),
             )
+            val cameraBearing = MapCameraStore.cameraBearing(state.bearing)
+            val relative = state.bearing - cameraBearing
             fill.style = Paint.Style.FILL
-            fill.color = Color.argb(90, 0, 0, 0)
-            canvas.drawCircle(cx, cy, 18f * unit, fill)
-            fill.color = theme.green
-            canvas.drawCircle(cx, cy, 10f * unit, fill)
-            stroke.style = Paint.Style.STROKE
-            stroke.strokeWidth = 2f * unit
-            stroke.color = theme.foreground
-            canvas.drawCircle(cx, cy, 10f * unit, stroke)
+            fill.color = Color.argb(110, 0, 0, 0)
+            canvas.drawCircle(cx, cy, 16f * unit, fill)
+            canvas.save()
+            canvas.rotate(relative, cx, cy)
             route.reset()
-            route.moveTo(cx, cy - 18f * unit)
-            route.lineTo(cx - 5f * unit, cy - 9f * unit)
-            route.lineTo(cx + 5f * unit, cy - 9f * unit)
+            route.moveTo(cx, cy - 22f * unit)
+            route.lineTo(cx - 8f * unit, cy + 10f * unit)
+            route.lineTo(cx, cy + 4f * unit)
+            route.lineTo(cx + 8f * unit, cy + 10f * unit)
             route.close()
             fill.color = theme.foreground
             canvas.drawPath(route, fill)
+            fill.color = theme.green
+            canvas.drawCircle(cx, cy, 5f * unit, fill)
+            canvas.restore()
         }
         canvas.restore()
+        return MapLayerResult(stale = stale, zoom = camZoom)
+    }
 
-        // Top-left maneuver / route status banner
+    private fun drawDrive(
+        canvas: Canvas,
+        content: RectF,
+        theme: OmarchyTheme,
+        state: DashboardState,
+        unit: Float,
+    ): DriveHit {
+        val layer = drawMapLayer(canvas, content, theme, state, unit)
+        val stale = layer.stale
+        val camZoom = layer.zoom
+        val dest = NavigationController.destination
+
+        // Left guidance card. Android Auto does not use this; the host template does.
         val navInstruction = NavigationController.currentInstruction()
         val navStatus = NavigationController.statusMessage
         val navError: String? = null
         val navState = NavigationController.navState
+        var guidanceBottom = content.top + 8f * unit
         if (dest != null || navInstruction != null || navStatus != null || navError != null) {
-            val bannerRight = content.right - 68f * unit
+            val bannerWidth = minOf(content.width() * 0.46f, 300f * unit).coerceAtLeast(180f * unit)
             val banner = RectF(
                 content.left + 10f * unit,
                 content.top + 8f * unit,
-                bannerRight.coerceAtLeast(content.left + 180f * unit),
-                content.top + 56f * unit,
+                content.left + 10f * unit + bannerWidth,
+                content.top + 78f * unit,
             )
+            guidanceBottom = banner.bottom
             fill.style = Paint.Style.FILL
             fill.color = withAlpha(theme.background, 225)
             canvas.drawRoundRect(banner, 3f * unit, 3f * unit, fill)
@@ -1815,15 +2031,15 @@ class TileRenderer {
             theme.dim,
         )
 
-        // Bottom-left compact speed panel
+        // Compact speed directly under the left guidance card.
         val panel = RectF(
             content.left + 10f * unit,
-            content.bottom - 86f * unit,
-            content.left + 190f * unit,
-            content.bottom - 10f * unit,
+            guidanceBottom + 8f * unit,
+            content.left + 156f * unit,
+            guidanceBottom + 64f * unit,
         )
         fill.style = Paint.Style.FILL
-        fill.color = withAlpha(theme.background, 215)
+        fill.color = withAlpha(theme.background, 220)
         canvas.drawRoundRect(panel, 3f * unit, 3f * unit, fill)
         stroke.style = Paint.Style.STROKE
         stroke.strokeWidth = 1f * unit
@@ -1832,20 +2048,21 @@ class TileRenderer {
 
         val speed = state.speedKph
         val speedText = if (speed != null) "%.0f".format(Locale.US, speed) else "--"
-        val speedX = panel.left + 12f * unit
-        val speedBaseline = panel.bottom - 26f * unit
-        text(canvas, speedText, speedX, speedBaseline, 42f * unit, theme.foreground, bold = true)
+        val speedX = panel.left + 10f * unit
+        val speedBaseline = panel.top + 30f * unit
+        text(canvas, speedText, speedX, speedBaseline, 26f * unit, theme.foreground, bold = true)
         text(
-            canvas, "km/h", speedX + measure(speedText, 42f * unit, bold = true) + 6f * unit,
+            canvas, "km/h", speedX + measure(speedText, 26f * unit, bold = true) + 6f * unit,
             speedBaseline, 9f * unit, theme.dim,
         )
         val gps = when {
-            navState == NavState.ACTIVE -> "NAV ACTIVE"
-            navState == NavState.ROUTING -> "ROUTING…"
-            navState == NavState.LOCATION_REQUIRED -> "LOCATION REQ"
+            navState == NavState.ACTIVE -> "NAV"
+            navState == NavState.ROUTING -> "ROUTING"
+            navState == NavState.LOCATION_REQUIRED -> "NO FIX"
             navState == NavState.ROUTE_ERROR -> "ROUTE ERROR"
-            !MapCameraStore.followGps -> "FREE PAN"
-            state.gpsActive -> "GPS LIVE"
+            !MapCameraStore.followGps -> "PAN"
+            MapCameraStore.orientation == MapCameraStore.Orientation.NORTH_UP -> "NORTH"
+            state.gpsActive -> "FOLLOW"
             else -> "GPS WAIT"
         }
         text(
@@ -1950,7 +2167,7 @@ class TileRenderer {
 
         // Stage web app pills on the right side of the bar
         var rightX = content.right
-        if (FeatureFlags.ALLOW_CAR_WEB_STAGE) {
+        if (CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.PHONE)) {
             StageWebApp.entries.reversed().forEach { app ->
                 val label = app.title
                 val w = measure(label, 8f * unit, bold = true) + 16f * unit
@@ -2331,9 +2548,9 @@ class TileRenderer {
         val listTop = content.top + headerH
         val listHeight = content.bottom - listTop
         val textScale = DisplaySettings.notificationTextScale
-        val baseRow = 52f * unit * textScale
-        val maxItems = (listHeight / baseRow).toInt().coerceIn(2, 5)
+        val baseRow = 64f * unit * textScale
         val total = state.notifications.size
+        val maxItems = NotificationCardLayout.visibleCount(listHeight, baseRow, total).coerceAtLeast(1)
         val maxOffset = (total - maxItems).coerceAtLeast(0)
         notifScrollOffset = notifScrollOffset.coerceIn(0, maxOffset)
         val items = state.notifications.drop(notifScrollOffset).take(maxItems)
@@ -2399,7 +2616,7 @@ class TileRenderer {
 
         val scrollTrackW = if (total > maxItems) 6f * unit else 0f
         val rowRight = content.right - (if (scrollTrackW > 0f) scrollTrackW + 6f * unit else 0f)
-        val rowH = minOf(baseRow, listHeight / items.size.coerceAtLeast(1))
+        val rowH = NotificationCardLayout.rowHeight(baseRow)
         val rows = mutableListOf<Pair<String, RectF>>()
         val dismissRows = mutableListOf<Pair<String, RectF>>()
 
@@ -2915,11 +3132,21 @@ class TileRenderer {
         val candidates = mutableListOf<Pair<Int, RectF>>()
         var keysTop = inputBox.bottom + 8f * kbUnit
 
+        val rows = QwertyLayout.rows()
+        val rowGap = 4f * kbUnit
+        val minKeyH = 28f * kbUnit
+        val keyBlock = rows.size * minKeyH + rowGap * (rows.size - 1)
         if (keyboardMode == KeyboardMode.MAP_SEARCH) {
             val results = NavigationController.searchResults.take(3)
-            val candAreaH = 66f * kbUnit
-            if (results.isNotEmpty()) {
-                val rowH = (candAreaH / results.size.coerceAtLeast(1))
+            val candBudget = (card.bottom - pad - keyBlock - 8f * kbUnit - keysTop).coerceAtLeast(0f)
+            val rowH = if (results.isEmpty()) {
+                0f
+            } else {
+                (candBudget / results.size).coerceAtMost(36f * kbUnit).coerceAtLeast(0f)
+            }
+            val visible = if (rowH >= 20f * kbUnit) results.size else 0
+            val candAreaH = rowH * visible
+            if (visible > 0) {
                 results.forEachIndexed { idx, cand ->
                     val rTop = keysTop + idx * rowH
                     val row = RectF(card.left + pad, rTop, card.right - pad, rTop + rowH - 3f * kbUnit)
@@ -2936,14 +3163,14 @@ class TileRenderer {
                         "▶ ${cand.name}  ·  ${cand.displayName}",
                         row.left + 8f * kbUnit,
                         row.centerY() + 3f * kbUnit,
-                        8.5f * kbUnit,
+                        12f * kbUnit,
                         theme.foreground,
                         bold = idx == 0,
                         maxWidth = row.width() - 16f * kbUnit,
                     )
                 }
                 keysTop += candAreaH + 4f * kbUnit
-            } else {
+            } else if (candBudget >= 22f * kbUnit) {
                 val hint = NavigationController.statusMessage
                     ?: "Type an address or place and tap SEARCH, then tap a result to start route"
                 text(
@@ -2959,32 +3186,31 @@ class TileRenderer {
             }
         }
 
-        val rows = listOf(
-            listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"),
-            listOf("Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"),
-            listOf("A", "S", "D", "F", "G", "H", "J", "K", "L", "-"),
-            listOf("Z", "X", "C", "V", "B", "N", "M", "SPACE", ".", "/"),
-        )
         val keysBottom = card.bottom - pad
-        val availH = (keysBottom - keysTop).coerceAtLeast(80f * kbUnit)
-        val rowGap = 4f * kbUnit
-        val keyH = (availH - rowGap * (rows.size - 1)) / rows.size
+        val availH = (keysBottom - keysTop).coerceAtLeast(rows.size * 8f)
+        val keyH = ((availH - rowGap * (rows.size - 1)) / rows.size).coerceAtLeast(8f)
+        val widest = rows.maxOf { row ->
+            row.indentKeys + row.keys.sumOf { it.weight.toDouble() }.toFloat()
+        }
+        val unitW = (card.width() - pad * 2f) / widest
         val keys = mutableListOf<Pair<String, RectF>>()
+        var spaceRect: RectF? = null
 
-        rows.forEachIndexed { rIdx, rowKeys ->
+        rows.forEachIndexed { rIdx, row ->
             val top = keysTop + rIdx * (keyH + rowGap)
-            val totalWeight = rowKeys.sumOf { if (it == "SPACE") 3 else 1 }.toFloat()
-            val totalGap = gap * (rowKeys.size - 1)
-            val unitW = (card.width() - pad * 2f - totalGap) / totalWeight
-            var x = card.left + pad
-            for (k in rowKeys) {
-                val weight = if (k == "SPACE") 3f else 1f
-                val w = unitW * weight
-                val rect = RectF(x, top, x + w, top + keyH)
-                x = rect.right + gap
-                val value = if (k == "SPACE") " " else k
+            var x = card.left + pad + row.indentKeys * unitW
+            for (key in row.keys) {
+                val rect = if (key.label == "SPACE") {
+                    RectF(card.left + pad, top, card.right - pad, top + keyH)
+                } else {
+                    val w = unitW * key.weight - gap
+                    RectF(x, top, x + w.coerceAtLeast(8f), top + keyH)
+                }
+                x += unitW * key.weight
+                val value = QwertyLayout.valueOf(key.label)
                 keys += value to rect
-                drawTextButton(canvas, rect, k, theme, kbUnit, color = theme.foreground)
+                if (key.label == "SPACE") spaceRect = rect
+                drawTextButton(canvas, rect, key.label, theme, kbUnit, color = theme.foreground)
             }
         }
 
@@ -2992,7 +3218,7 @@ class TileRenderer {
             card = card,
             keys = keys,
             backspace = backspace,
-            space = null,
+            space = spaceRect,
             clear = clear,
             submit = submit,
             close = close,
@@ -3082,7 +3308,6 @@ class TileRenderer {
     }
 
     companion object {
-        private const val STALE_AFTER_MS = 6_000L
         private const val MAX_VISIBLE_RAIL = 4
     }
 }

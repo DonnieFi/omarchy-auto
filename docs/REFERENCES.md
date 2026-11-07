@@ -10,7 +10,9 @@ aarch64 support.
   templates, categories, and the host model for Android Auto and Android
   Automotive OS. The library is Apache-2.0.
 - [Navigation apps](https://developer.android.com/training/cars/apps/navigation) —
-  `NAVIGATION` category, `NavigationTemplate`, and the map surface.
+  `NAVIGATION` category, `NavigationTemplate`, and the map surface. Omarchy
+  Auto draws only the map on that surface. Maneuvers and ETA use the host
+  routing card (ADR-0014).
 - [Access the surface](https://developer.android.com/training/cars/apps/navigation#access-surface) —
   `androidx.car.app.ACCESS_SURFACE` and `AppManager.setSurfaceCallback`.
 - [Test Android apps for cars](https://developer.android.com/training/cars/testing) —

@@ -1,5 +1,6 @@
 package com.omarchy.auto.core
 
+import com.omarchy.auto.core.diag.OaLog
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -35,6 +36,12 @@ data class SearchCandidate(
     val displayName: String get() = if (subtitle.isNotBlank()) "$title, $subtitle" else title
 }
 
+/** One arrow in a turn-lane diagram. Indications use OSRM names such as "left". */
+data class RouteLane(
+    val indications: List<String>,
+    val recommended: Boolean,
+)
+
 data class RouteStep(
     val instruction: String,
     val street: String,
@@ -44,6 +51,7 @@ data class RouteStep(
     val longitude: Double,
     val startLatitude: Double = latitude,
     val startLongitude: Double = longitude,
+    val lanes: List<RouteLane> = emptyList(),
 )
 
 data class ParsedRoute(
@@ -66,9 +74,19 @@ data class ParsedRoute(
  *    never overwrite newer destinations or repopulate after Stop.
  */
 object NavigationController {
+    private const val TAG = "NavigationController"
     const val MAX_FIX_AGE_MS = 45_000L
+    const val OFF_ROUTE_METERS = 40.0
+    private const val AUTO_DRIVE_MPS = 40.0 / 3.6
     const val MAX_ACCURACY_METERS = 100f
-    private const val MIN_REQUEST_GAP_MS = 800L
+
+    /**
+     * Polite gap between public geocoder and router calls. This used to sleep
+     * 800 ms on the routing thread before every network request, which showed
+     * up as search and route lag even on a fast link. Network time still
+     * dominates and has to be measured on a device.
+     */
+    const val MIN_REQUEST_GAP_MS = 200L
 
     private val executor = Executors.newSingleThreadExecutor()
     private val searchGeneration = AtomicLong(0L)
@@ -85,6 +103,25 @@ object NavigationController {
 
     @Volatile
     var synchronousForTest: Boolean = false
+
+    @Volatile
+    var autoDriveEnabled: Boolean = false
+        private set
+
+    /** True after repeated fixes sit well off the active polyline. Not a reroute. */
+    @Volatile
+    var offRoute: Boolean = false
+        private set
+
+    @Volatile
+    var lastSearchElapsedMs: Long = -1L
+        private set
+
+    private var autoDriveDistanceM: Double = 0.0
+    private var autoDriveLastMs: Long = -1L
+    private var offRouteHits: Int = 0
+    private var heldDurationSeconds: Double = -1.0
+    private var heldDurationStep: Int = -1
 
     @Volatile
     var routeTransport: ((Double, Double, Double, Double) -> ParsedRoute?)? = null
@@ -236,6 +273,7 @@ object NavigationController {
 
         val origin = validGpsOrigin()
         val task = Runnable {
+            val started = System.currentTimeMillis()
             val custom = searchTransport
             val results = try {
                 if (custom != null) {
@@ -248,6 +286,8 @@ object NavigationController {
             } catch (_: Exception) {
                 emptyList()
             }
+            lastSearchElapsedMs = (System.currentTimeMillis() - started).coerceAtLeast(0L)
+            OaLog.i(TAG, "Search finished in ${lastSearchElapsedMs} ms")
             if (token != searchGeneration.get() || searchQuery != trimmed) {
                 return@Runnable
             }
@@ -381,13 +421,103 @@ object NavigationController {
         currentLegRemainingMeters = 0.0
         destination = null
         statusMessage = null
+        autoDriveEnabled = false
+        autoDriveDistanceM = 0.0
+        autoDriveLastMs = -1L
+        offRoute = false
+        offRouteHits = 0
+        heldDurationSeconds = -1.0
+        heldDurationStep = -1
         LiveDataStore.notifyDisplayChanged()
+    }
+
+    /**
+     * DHU "simulate navigation" (quality NF-7). Steps the existing route and
+     * publishes a fix. Returns true while the simulation should keep ticking.
+     * Does not treat speed 0 as parked.
+     */
+    fun onAutoDriveEnabled() {
+        autoDriveEnabled = true
+        autoDriveDistanceM = 0.0
+        autoDriveLastMs = -1L
+    }
+
+    /**
+     * Moves about 11 m along the polyline per second at 40 km/h. A tick does
+     * not jump to the next geometry vertex.
+     */
+    fun advanceAutoDrive(nowMs: Long = System.currentTimeMillis()): Boolean {
+        if (!autoDriveEnabled) return false
+        if (navState == NavState.ROUTING) return true
+        val points = routeGeometry
+        if (navState != NavState.ACTIVE || points.size < 2) {
+            autoDriveEnabled = false
+            return false
+        }
+        val dt = if (autoDriveLastMs < 0L) 1_000L else (nowMs - autoDriveLastMs).coerceIn(0L, 2_000L)
+        autoDriveLastMs = nowMs
+        val total = polylineLength(points)
+        val nextDistance = (autoDriveDistanceM + AUTO_DRIVE_MPS * (dt / 1000.0)).coerceAtMost(total)
+        val previous = pointAlong(points, autoDriveDistanceM)
+        val point = pointAlong(points, nextDistance)
+        autoDriveDistanceM = nextDistance
+        val course = HeadingHold.bearingBetween(previous.first, previous.second, point.first, point.second)
+        LiveDataStore.setLocationFix(
+            speedKph = 40f,
+            gpsActive = true,
+            latitude = point.first,
+            longitude = point.second,
+            bearing = course,
+            accuracyM = 5f,
+            updatedAtMs = nowMs,
+        )
+        onLocationUpdate(point.first, point.second, 5f, nowMs)
+        if (navState != NavState.ACTIVE || autoDriveDistanceM >= total - 0.5) {
+            autoDriveEnabled = false
+            return false
+        }
+        return true
+    }
+
+    /** Builds a new route from the current GPS fix to the same destination. */
+    fun recalculate() {
+        val dest = destination ?: return
+        offRoute = false
+        offRouteHits = 0
+        autoDriveDistanceM = 0.0
+        autoDriveLastMs = -1L
+        selectDestination(dest, autoStartNav = true)
+    }
+
+    /**
+     * Arrival time shown on the host card. Holds the previous value until the
+     * step changes or the estimate moves by at least 30 seconds.
+     */
+    fun displayedRemainingDurationSeconds(): Double {
+        val raw = remainingDurationSeconds
+        if (heldDurationStep != currentStepIndex || heldDurationSeconds < 0.0) {
+            heldDurationSeconds = raw
+            heldDurationStep = currentStepIndex
+            return heldDurationSeconds
+        }
+        if (kotlin.math.abs(raw - heldDurationSeconds) >= 30.0) {
+            heldDurationSeconds = raw
+        }
+        return heldDurationSeconds
     }
 
     fun resetForTest() {
         synchronousForTest = false
         routeTransport = null
         searchTransport = null
+        autoDriveEnabled = false
+        autoDriveDistanceM = 0.0
+        autoDriveLastMs = -1L
+        offRoute = false
+        offRouteHits = 0
+        heldDurationSeconds = -1.0
+        heldDurationStep = -1
+        lastSearchElapsedMs = -1L
         clearQuery()
         stopNavigation()
     }
@@ -401,6 +531,20 @@ object NavigationController {
         if (lat == null || lon == null) return
         if (accuracyM != null && accuracyM > MAX_ACCURACY_METERS) return
         if (!active || navState != NavState.ACTIVE) return
+        val away = distanceToRouteMeters(lat, lon)
+        if (away > OFF_ROUTE_METERS) {
+            offRouteHits += 1
+            if (offRouteHits >= 2 && !offRoute) {
+                offRoute = true
+                statusMessage = "OFF THE ROUTE"
+                LiveDataStore.notifyDisplayChanged()
+            }
+            if (offRoute) return
+        } else if (offRouteHits != 0 || offRoute) {
+            offRouteHits = 0
+            offRoute = false
+            if (statusMessage == "OFF THE ROUTE") statusMessage = null
+        }
         val steps = routeSteps
         val dest = destination ?: return
         if (steps.isEmpty()) return
@@ -516,6 +660,10 @@ object NavigationController {
         }
         currentLegRemainingMeters = firstSpan
         distanceToNextTurnMeters = firstSpan
+        offRoute = false
+        offRouteHits = 0
+        heldDurationSeconds = route.totalDurationSeconds
+        heldDurationStep = 0
     }
 
     private data class RawOsrmStep(
@@ -526,6 +674,8 @@ object NavigationController {
         val durationSeconds: Double,
         val latitude: Double,
         val longitude: Double,
+        val exit: Int? = null,
+        val lanes: List<RouteLane> = emptyList(),
     )
 
     internal fun parseOsrmRouteJson(raw: String): ParsedRoute? {
@@ -570,6 +720,8 @@ object NavigationController {
                             durationSeconds = dur,
                             latitude = lat,
                             longitude = lon,
+                            exit = maneuver?.takeIf { it.has("exit") }?.optInt("exit"),
+                            lanes = parseLanes(s),
                         )
                     }
                 }
@@ -578,6 +730,7 @@ object NavigationController {
                 ?.takeIf { it.geometry.size >= 2 && it.steps.isNotEmpty() }
                 ?: parseOsrmFallback(raw)
         } catch (_: Exception) {
+            // Unit tests stub org.json and throw. A device uses the object path above.
             parseOsrmFallback(raw)
         }
     }
@@ -633,6 +786,7 @@ object NavigationController {
                 .find(block)
             val lon = locMatch?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
             val lat = locMatch?.groupValues?.get(2)?.toDoubleOrNull() ?: 0.0
+            val exit = Regex("\"exit\"\\s*:\\s*(\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull()
             RawOsrmStep(
                 type = type,
                 modifier = modifier,
@@ -641,6 +795,8 @@ object NavigationController {
                 durationSeconds = dur,
                 latitude = lat,
                 longitude = lon,
+                exit = exit,
+                lanes = parseLanesFallback(block),
             )
         }
         return buildParsedRoute(coordPairs, rawSteps, totalDistance, totalDuration)
@@ -682,7 +838,7 @@ object NavigationController {
             // that upcoming turn at the end of leg 0.
             val announce = if (current.type == "depart" && next != null) next else current
             RouteStep(
-                instruction = formatManeuver(announce.type, announce.modifier),
+                instruction = formatManeuver(announce.type, announce.modifier, announce.exit),
                 street = announce.name.ifBlank { current.name },
                 distanceMeters = current.distanceMeters,
                 durationSeconds = current.durationSeconds,
@@ -690,6 +846,7 @@ object NavigationController {
                 longitude = endLon,
                 startLatitude = current.latitude,
                 startLongitude = current.longitude,
+                lanes = announce.lanes,
             )
         }
         val computedTotalDist = if (totalDistance > 0.0) {
@@ -710,7 +867,7 @@ object NavigationController {
         )
     }
 
-    private fun formatManeuver(type: String, modifier: String): String {
+    private fun formatManeuver(type: String, modifier: String, exit: Int? = null): String {
         val mod = modifier.replace('-', ' ').uppercase(Locale.US)
         return when (type) {
             "turn" -> if (mod.isNotBlank()) "TURN $mod" else "TURN"
@@ -718,11 +875,145 @@ object NavigationController {
             "merge" -> "MERGE $mod".trim()
             "on ramp", "off ramp" -> "RAMP $mod".trim()
             "fork" -> "FORK $mod".trim()
-            "roundabout", "rotary" -> "ROUNDABOUT"
+            "roundabout", "rotary" -> {
+                if (exit != null && exit > 0) "ROUNDABOUT, ${ordinal(exit)} EXIT" else "ROUNDABOUT"
+            }
             "arrive" -> "ARRIVE"
             "depart" -> "HEAD $mod".trim()
             else -> if (mod.isNotBlank()) mod else "CONTINUE"
         }
+    }
+
+    private fun ordinal(n: Int): String {
+        val suffix = when {
+            n % 100 in 11..13 -> "TH"
+            n % 10 == 1 -> "ST"
+            n % 10 == 2 -> "ND"
+            n % 10 == 3 -> "RD"
+            else -> "TH"
+        }
+        return "$n$suffix"
+    }
+
+    /**
+     * Used when [org.json.JSONObject] is the unit-test stub. Reads the first
+     * `lanes` array in this maneuver's block.
+     */
+    private fun parseLanesFallback(block: String): List<RouteLane> {
+        val key = block.indexOf("\"lanes\"")
+        if (key < 0) return emptyList()
+        val start = block.indexOf('[', key)
+        if (start < 0) return emptyList()
+        val array = sliceMatching(block, start, '[', ']') ?: return emptyList()
+        val lanes = mutableListOf<RouteLane>()
+        var cursor = 0
+        while (cursor < array.length) {
+            val objStart = array.indexOf('{', cursor)
+            if (objStart < 0) break
+            val obj = sliceMatching(array, objStart, '{', '}') ?: break
+            val indications = Regex("\"indications\"\\s*:\\s*\\[([^\\]]*)]").find(obj)
+                ?.groupValues?.get(1)
+                ?.split(',')
+                ?.map { it.trim().trim('"') }
+                ?.filter { it.isNotEmpty() }
+                .orEmpty()
+            lanes += RouteLane(indications, Regex("\"valid\"\\s*:\\s*true").containsMatchIn(obj))
+            cursor = objStart + obj.length
+        }
+        return lanes
+    }
+
+    private fun sliceMatching(text: String, openIndex: Int, open: Char, close: Char): String? {
+        if (openIndex !in text.indices || text[openIndex] != open) return null
+        var depth = 0
+        for (i in openIndex until text.length) {
+            when (text[i]) {
+                open -> depth++
+                close -> {
+                    depth--
+                    if (depth == 0) return text.substring(openIndex, i + 1)
+                }
+            }
+        }
+        return null
+    }
+
+    private fun parseLanes(step: JSONObject): List<RouteLane> {
+        val intersections = step.optJSONArray("intersections") ?: return emptyList()
+        for (i in 0 until intersections.length()) {
+            val lanes = intersections.optJSONObject(i)?.optJSONArray("lanes") ?: continue
+            if (lanes.length() == 0) continue
+            return (0 until lanes.length()).map { index ->
+                val lane = lanes.optJSONObject(index) ?: return@map RouteLane(emptyList(), false)
+                val indications = lane.optJSONArray("indications")
+                val names = if (indications == null) {
+                    emptyList()
+                } else {
+                    (0 until indications.length()).map { indications.optString(it) }
+                }
+                RouteLane(names, lane.optBoolean("valid", false))
+            }
+        }
+        return emptyList()
+    }
+
+    private fun distanceToRouteMeters(lat: Double, lon: Double): Double {
+        val points = routeGeometry
+        if (points.size < 2) return Double.MAX_VALUE
+        var best = Double.MAX_VALUE
+        for (i in 0 until points.lastIndex) {
+            val span = distanceToSegmentMeters(lat, lon, points[i], points[i + 1])
+            if (span < best) best = span
+        }
+        return best
+    }
+
+    private fun distanceToSegmentMeters(
+        lat: Double,
+        lon: Double,
+        start: Pair<Double, Double>,
+        end: Pair<Double, Double>,
+    ): Double {
+        val meanLat = Math.toRadians((start.first + end.first) / 2.0)
+        val kx = 111_320.0 * cos(meanLat)
+        val ky = 110_540.0
+        val ax = (start.second - lon) * kx
+        val ay = (start.first - lat) * ky
+        val bx = (end.second - lon) * kx
+        val by = (end.first - lat) * ky
+        val abx = bx - ax
+        val aby = by - ay
+        val ab2 = abx * abx + aby * aby
+        val t = if (ab2 <= 1.0) 0.0 else ((-ax) * abx + (-ay) * aby) / ab2
+        val clamped = t.coerceIn(0.0, 1.0)
+        val px = ax + abx * clamped
+        val py = ay + aby * clamped
+        return sqrt(px * px + py * py)
+    }
+
+    private fun polylineLength(points: List<Pair<Double, Double>>): Double {
+        var total = 0.0
+        for (i in 0 until points.lastIndex) {
+            total += haversineMeters(points[i].first, points[i].second, points[i + 1].first, points[i + 1].second)
+        }
+        return total
+    }
+
+    private fun pointAlong(points: List<Pair<Double, Double>>, distanceM: Double): Pair<Double, Double> {
+        if (points.isEmpty()) return 0.0 to 0.0
+        var remaining = distanceM.coerceAtLeast(0.0)
+        for (i in 0 until points.lastIndex) {
+            val start = points[i]
+            val end = points[i + 1]
+            val span = haversineMeters(start.first, start.second, end.first, end.second)
+            if (span < 0.5 || remaining <= span) {
+                val fraction = if (span < 0.5) 1.0 else (remaining / span).coerceIn(0.0, 1.0)
+                return start.first + (end.first - start.first) * fraction to
+                    start.second + (end.second - start.second) * fraction
+            }
+            remaining -= span
+        }
+        return points.last()
     }
 
     private fun throttleRequest() {

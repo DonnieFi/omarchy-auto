@@ -16,9 +16,15 @@ for a 30-minute real-car drive measurement.
   equal, which avoids redraws for stationary duplicate fixes.
 - **Battery:** one sticky `ACTION_BATTERY_CHANGED` read at start, then only
   broadcast changes. The footer draws an icon, percentage, and charging tint.
-- **Map:** snapshots only while Drive is the active stage; the renderer requests
-  at most one snapshot per 2.5 s, requires 20 m movement or a 20° turn, and
-  treats an image older than 6 s plus 30 m of movement as stale.
+- **Map:** snapshots while the map viewport is active. Follow mode requests at
+  most one snapshot per 1 s after 8 m or 12°. Panning uses the 2.5 s interval
+  with the same 8 m / 12° gate. The "updating map" badge follows that 8 m move
+  or a zoom change of about 0.45. Age alone, while stopped, does not mark the
+  bitmap stale.
+- **Android Auto surface:** the canvas is the map, route, marker, compact
+  speed, and attribution. Maneuver text and ETA are host templates, so a GPS
+  fix does not repaint those strings on the bitmap. The phone shell still
+  redraws media, notifications, and the rail.
 - **Backgrounds:** decoded off the draw thread with latest-request-wins; a
   background change triggers one redraw.
 

@@ -23,8 +23,18 @@ object MapCameraStore {
     var zoom: Double = DEFAULT_ZOOM
         private set
 
+    enum class Orientation { HEADING_UP, NORTH_UP }
+
     @Volatile
     var followGps: Boolean = true
+        private set
+
+    /**
+     * Heading-up rotates the map with course. North-up keeps north at the top
+     * while follow is still on. Panning leaves this choice alone.
+     */
+    @Volatile
+    var orientation: Orientation = Orientation.HEADING_UP
         private set
 
     @Volatile
@@ -139,9 +149,23 @@ object MapCameraStore {
         LiveDataStore.notifyDisplayChanged()
     }
 
+    fun cameraBearing(deviceBearing: Float): Float =
+        if (orientation == Orientation.HEADING_UP) deviceBearing else 0f
+
+    fun toggleOrientation() {
+        orientation = if (orientation == Orientation.HEADING_UP) {
+            Orientation.NORTH_UP
+        } else {
+            Orientation.HEADING_UP
+        }
+        revision++
+        LiveDataStore.notifyDisplayChanged()
+    }
+
     fun resetForTest() {
         zoom = DEFAULT_ZOOM
         followGps = true
+        orientation = Orientation.HEADING_UP
         panLat = null
         panLon = null
         accumulatedZoomDelta = 0.0
@@ -166,7 +190,7 @@ object MapCameraStore {
         centerLat = centerLat,
         centerLon = centerLon,
         zoomLevel = zoomLevel,
-        bearingDeg = if (followGps) MapSnapshotStore.bearing else 0f,
+        bearingDeg = cameraBearing(MapSnapshotStore.bearing),
         centerXScreen = centerXScreen,
         centerYScreen = centerYScreen,
         scaleFactor = 1f,

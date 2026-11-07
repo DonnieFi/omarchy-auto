@@ -29,7 +29,15 @@ object OaLog {
     fun lines(): List<String> = buffer.lines()
 
     private fun write(level: Int, tag: String, message: String, error: Throwable?) {
-        if (error == null) Log.println(level, tag, message) else Log.println(level, tag, message + "\n" + Log.getStackTraceString(error))
+        try {
+            if (error == null) {
+                Log.println(level, tag, message)
+            } else {
+                Log.println(level, tag, message + "\n" + Log.getStackTraceString(error))
+            }
+        } catch (_: RuntimeException) {
+            // Plain JVM unit tests stub android.util.Log and throw. The buffer still records the line.
+        }
         val levelName = when (level) { Log.ERROR -> "E"; Log.WARN -> "W"; else -> "I" }
         val suffix = error?.let { " | ${it.javaClass.name}: ${it.message}" }.orEmpty()
         buffer.add("${System.currentTimeMillis()} $levelName/$tag: $message$suffix")

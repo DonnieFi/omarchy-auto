@@ -152,10 +152,12 @@ class LocationWatcher(
 
     private fun publish(location: Location) {
         val speed = if (location.hasSpeed()) location.speed * 3.6f else null
-        val moving = speed == null || speed >= 5f
-        if (location.hasBearing() && moving) {
-            lastBearing = location.bearing
-        }
+        lastBearing = HeadingHold.nextBearing(
+            previous = lastBearing,
+            hasBearing = location.hasBearing(),
+            bearing = location.bearing,
+            speedKph = speed,
+        )
         val accuracy = if (location.hasAccuracy()) location.accuracy else null
         onUpdate(speed, true, location.latitude, location.longitude, lastBearing, accuracy)
     }
