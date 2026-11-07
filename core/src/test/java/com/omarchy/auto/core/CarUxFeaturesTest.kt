@@ -65,6 +65,7 @@ class CarUxFeaturesTest {
         StageWebController.resetForTest()
         OmarchyNotificationListener.clearDismissedForTest()
         NavigationController.resetForTest()
+        DistractionLock.resetForTest()
     }
 
     @After
@@ -358,4 +359,274 @@ class CarUxFeaturesTest {
         assertTrue(StageWebController.paused)
         assertNull(StageWebController.bitmap)
     }
+
+    @Test
+    fun headingUpStaysIndependentOfFollowAndNorthUpKeepsNorth() {
+        assertEquals(MapCameraStore.Orientation.HEADING_UP, MapCameraStore.orientation)
+        assertEquals(90f, MapCameraStore.cameraBearing(90f), 0.01f)
+        MapCameraStore.panByPixels(40f, 10f, 43.65, -79.38)
+        assertFalse(MapCameraStore.followGps)
+        assertEquals(MapCameraStore.Orientation.HEADING_UP, MapCameraStore.orientation)
+        assertEquals(90f, MapCameraStore.cameraBearing(90f), 0.01f)
+        MapCameraStore.toggleOrientation()
+        assertEquals(MapCameraStore.Orientation.NORTH_UP, MapCameraStore.orientation)
+        assertEquals(0f, MapCameraStore.cameraBearing(90f), 0.01f)
+        MapCameraStore.recenter()
+        assertTrue(MapCameraStore.followGps)
+        assertEquals(MapCameraStore.Orientation.NORTH_UP, MapCameraStore.orientation)
+    }
+
+    @Test
+    fun lowSpeedBearingIsHeldAndZeroSpeedDoesNotCountAsParked() {
+        assertEquals(20f, HeadingHold.nextBearing(20f, true, 180f, 0f), 0.01f)
+        assertEquals(20f, HeadingHold.nextBearing(20f, true, 180f, 4.9f), 0.01f)
+        assertEquals(180f, HeadingHold.nextBearing(20f, true, 180f, 8f), 0.01f)
+        assertEquals(20f, HeadingHold.nextBearing(20f, false, 180f, 30f), 0.01f)
+        assertEquals(180f, HeadingHold.nextBearing(20f, true, 180f, null), 0.01f)
+    }
+
+    @Test
+    fun followPolicyRefreshesLowSpeedMotionInsideASecondAfterTheInterval() {
+        assertFalse(
+            MapFollowPolicy.shouldRequest(
+                nowMs = 1_000L,
+                lastRequestAtMs = 500L,
+                needsInitial = false,
+                movedMeters = 30f,
+                turnedDegrees = 0f,
+                following = true,
+            ),
+        )
+        assertTrue(
+            MapFollowPolicy.shouldRequest(
+                nowMs = 1_500L,
+                lastRequestAtMs = 0L,
+                needsInitial = false,
+                movedMeters = 8f,
+                turnedDegrees = 0f,
+                following = true,
+            ),
+        )
+        assertFalse(
+            MapFollowPolicy.shouldRequest(
+                nowMs = 2_000L,
+                lastRequestAtMs = 0L,
+                needsInitial = false,
+                movedMeters = 7f,
+                turnedDegrees = 11f,
+                following = false,
+            ),
+        )
+    }
+
+    @Test
+    fun synchronousSearchRecordsElapsedTime() {
+        NavigationController.synchronousForTest = true
+        NavigationController.searchTransport = { _, _, _ -> emptyList() }
+        NavigationController.searchAddress("Queen St")
+        assertTrue(NavigationController.lastSearchElapsedMs >= 0L)
+    }
+
+    @Test
+    fun distractionLockIgnoresAStopAndStaysLockedUntilTheHostParks() {
+        DistractionLock.onCarSessionStarted()
+        LiveDataStore.setLocationFix(0f, true, 43.65, -79.38, 0f, 5f, System.currentTimeMillis())
+        assertTrue(DistractionLock.suppressesSharedDistractions())
+        assertFalse(CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.ANDROID_AUTO))
+        assertFalse(CarPlatformPolicy.allowsCustomKeyboard(CarPlatformPolicy.Surface.PHONE))
+        assertFalse(CarPlatformPolicy.allowsNotificationList(CarPlatformPolicy.Surface.ANDROID_AUTO))
+        DistractionLock.onHostUx(DistractionLock.HostUx.PARKED)
+        assertFalse(DistractionLock.suppressesSharedDistractions())
+        assertFalse(CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.ANDROID_AUTO))
+        assertTrue(CarPlatformPolicy.allowsCustomKeyboard(CarPlatformPolicy.Surface.PHONE))
+        DistractionLock.onHostUx(DistractionLock.HostUx.DRIVING)
+        assertTrue(DistractionLock.suppressesSharedDistractions())
+        assertFalse(CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.PHONE))
+        DistractionLock.onCarSessionEnded()
+        assertFalse(DistractionLock.suppressesSharedDistractions())
+        assertTrue(CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.PHONE))
+        DistractionLock.onHostUx(DistractionLock.HostUx.PARKED)
+        assertFalse(DistractionLock.carSessionActive)
+        assertFalse(DistractionLock.suppressesSharedDistractions())
+        assertTrue(CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.PHONE))
+    }
+
+    @Test
+    fun qwertyRowsAreStaggeredAndNotificationCardsDoNotShrink() {
+        val rows = QwertyLayout.rows()
+        assertTrue(rows[2].indentKeys > rows[1].indentKeys)
+        assertTrue(rows[1].indentKeys > 0f)
+        assertEquals("SPACE", rows.last().keys.single().label)
+        assertTrue(rows.last().keys.single().weight > 3f)
+        assertEquals(1, NotificationCardLayout.visibleCount(100f, 64f, 8))
+        assertEquals(4, NotificationCardLayout.visibleCount(400f, 64f, 8))
+        assertEquals(64f, NotificationCardLayout.rowHeight(64f), 0.01f)
+    }
+
+    @Test
+    fun autoDriveStepsAlongTheRouteWithoutUsingSpeedAsAParkedSignal() {
+        val now = System.currentTimeMillis()
+        NavigationController.synchronousForTest = true
+        val parsed = NavigationController.parseOsrmRouteJson(sampleOsrmJson)
+        NavigationController.routeTransport = { _, _, _, _ -> parsed }
+        fix(43.6532, -79.3832, 8f, now)
+        NavigationController.selectDestination(
+            SearchCandidate("Destination", "Toronto", 43.6580, -79.3750),
+            autoStartNav = true,
+            nowMs = now,
+        )
+        NavigationController.onAutoDriveEnabled()
+        assertTrue(NavigationController.advanceAutoDrive(now + 1_000L))
+        val nextVertex = parsed!!.geometry[1]
+        val lat = LiveDataStore.state.latitude!!
+        val lon = LiveDataStore.state.longitude!!
+        assertTrue(lat > 43.6532 + 0.00002)
+        assertTrue(lat < nextVertex.first - 0.001)
+        assertTrue(lon > -79.3832 + 0.00002)
+        assertTrue(lon < nextVertex.second - 0.001)
+        assertTrue(LiveDataStore.state.speedKph!! > 0f)
+        DistractionLock.onCarSessionStarted()
+        var guard = 0
+        while (NavigationController.autoDriveEnabled && guard < 400) {
+            val keepGoing = NavigationController.advanceAutoDrive(now + 2_000L + guard * 1_000L)
+            guard += 1
+            assertTrue(LiveDataStore.state.speedKph!! > 0f)
+            if (!keepGoing) break
+        }
+        assertTrue(guard < 400)
+        assertFalse(NavigationController.autoDriveEnabled)
+        val end = parsed.geometry.last()
+        assertEquals(end.first, LiveDataStore.state.latitude!!, 0.001)
+        assertEquals(end.second, LiveDataStore.state.longitude!!, 0.001)
+        assertTrue(DistractionLock.suppressesSharedDistractions())
+        NavigationController.stopNavigation()
+        assertFalse(NavigationController.advanceAutoDrive(now + 500_000L))
+        assertFalse(NavigationController.autoDriveEnabled)
+    }
+
+    @Test
+    fun roundaboutExitAndLanesComeFromTheAnnouncedStep() {
+        val parsed = NavigationController.parseOsrmRouteJson(roundaboutJson(2))
+        assertNotNull(parsed)
+        assertEquals("ROUNDABOUT, 2ND EXIT", parsed!!.steps[0].instruction)
+        assertEquals(2, parsed.steps[0].lanes.size)
+        assertEquals(listOf("left"), parsed.steps[0].lanes[0].indications)
+        assertFalse(parsed.steps[0].lanes[0].recommended)
+        assertEquals(listOf("straight", "slight right"), parsed.steps[0].lanes[1].indications)
+        assertTrue(parsed.steps[0].lanes[1].recommended)
+        assertTrue(NavigationController.parseOsrmRouteJson(roundaboutJson(11))!!.steps[0].instruction.contains("11TH"))
+        assertTrue(NavigationController.parseOsrmRouteJson(roundaboutJson(12))!!.steps[0].instruction.contains("12TH"))
+        assertTrue(NavigationController.parseOsrmRouteJson(roundaboutJson(13))!!.steps[0].instruction.contains("13TH"))
+        assertTrue(NavigationController.parseOsrmRouteJson(roundaboutJson(21))!!.steps[0].instruction.contains("21ST"))
+    }
+
+    @Test
+    fun offRouteWaitsForTwoFixesAndClearsWhenTheLineIsRejoined() {
+        val now = System.currentTimeMillis()
+        NavigationController.synchronousForTest = true
+        val parsed = NavigationController.parseOsrmRouteJson(sampleOsrmJson)
+        NavigationController.routeTransport = { _, _, _, _ -> parsed }
+        fix(43.6532, -79.3832, 5f, now)
+        NavigationController.selectDestination(
+            SearchCandidate("Destination", "Toronto", 43.6580, -79.3750),
+            autoStartNav = true,
+            nowMs = now,
+        )
+        NavigationController.onLocationUpdate(43.6532, -79.3832, 5f, now + 1_000L)
+        assertFalse(NavigationController.offRoute)
+
+        NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 2_000L)
+        assertFalse(NavigationController.offRoute)
+        assertEquals(0, NavigationController.currentStepIndex)
+
+        NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 3_000L)
+        assertTrue(NavigationController.offRoute)
+        assertEquals("OFF THE ROUTE", NavigationController.statusMessage)
+        assertEquals(0, NavigationController.currentStepIndex)
+
+        NavigationController.onLocationUpdate(43.6532, -79.3832, 5f, now + 4_000L)
+        assertFalse(NavigationController.offRoute)
+        assertNull(NavigationController.statusMessage)
+    }
+
+    @Test
+    fun displayedEtaHoldsUntilTheEstimateMovesByThirtySeconds() {
+        val now = System.currentTimeMillis()
+        NavigationController.synchronousForTest = true
+        val parsed = NavigationController.parseOsrmRouteJson(sampleOsrmJson)
+        NavigationController.routeTransport = { _, _, _, _ -> parsed }
+        fix(43.6532, -79.3832, 5f, now)
+        NavigationController.selectDestination(
+            SearchCandidate("Destination", "Toronto", 43.6580, -79.3750),
+            autoStartNav = true,
+            nowMs = now,
+        )
+        assertEquals(210.0, NavigationController.displayedRemainingDurationSeconds(), 0.01)
+        assertEquals(210.0, NavigationController.remainingDurationSeconds, 0.01)
+
+        NavigationController.onLocationUpdate(43.65329, -79.38304, 5f, now + 1_000L)
+        assertTrue(NavigationController.remainingDurationSeconds < 210.0)
+        assertTrue(210.0 - NavigationController.remainingDurationSeconds < 30.0)
+        assertEquals(210.0, NavigationController.displayedRemainingDurationSeconds(), 0.01)
+
+        NavigationController.onLocationUpdate(43.65464, -79.38064, 5f, now + 2_000L)
+        assertTrue(210.0 - NavigationController.remainingDurationSeconds >= 30.0)
+        assertEquals(
+            NavigationController.remainingDurationSeconds,
+            NavigationController.displayedRemainingDurationSeconds(),
+            0.01,
+        )
+    }
+
+    private fun roundaboutJson(exit: Int) = """
+        {
+          "code": "Ok",
+          "routes": [
+            {
+              "distance": 800.0,
+              "duration": 120.0,
+              "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                  [-79.3832, 43.6532],
+                  [-79.3800, 43.6550]
+                ]
+              },
+              "legs": [
+                {
+                  "steps": [
+                    {
+                      "distance": 200.0,
+                      "duration": 30.0,
+                      "name": "Queen St W",
+                      "maneuver": {
+                        "type": "depart",
+                        "location": [-79.3832, 43.6532]
+                      }
+                    },
+                    {
+                      "distance": 600.0,
+                      "duration": 90.0,
+                      "name": "Roundabout",
+                      "maneuver": {
+                        "type": "roundabout",
+                        "exit": $exit,
+                        "location": [-79.3800, 43.6550]
+                      },
+                      "intersections": [
+                        {
+                          "lanes": [
+                            { "indications": ["left"], "valid": false },
+                            { "indications": ["straight", "slight right"], "valid": true }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+    """.trimIndent()
 }

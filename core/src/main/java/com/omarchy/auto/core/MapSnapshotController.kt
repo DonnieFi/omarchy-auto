@@ -92,7 +92,7 @@ class MapSnapshotController(context: Context) {
             MapSnapshotStore.longitude ?: DEFAULT_LON,
         )
         val zoom = MapCameraStore.zoom
-        val bearing = if (MapCameraStore.followGps) state.bearing else 0f
+        val bearing = MapCameraStore.cameraBearing(state.bearing)
         val cameraChanged = MapCameraStore.revision != lastCameraRevision
         val now = SystemClock.elapsedRealtime()
         if (inFlight) {
@@ -107,9 +107,18 @@ class MapSnapshotController(context: Context) {
             height != snapshotHeight ||
             cameraChanged ||
             pendingCameraUpdate
-        if (!needsInitial) {
-            if (now - lastRequestAt < MIN_INTERVAL_MS) return
-            if (!movedEnough(lat, lon, bearing)) return
+        val moved = movedMeters(lat, lon)
+        val turned = turnedDegrees(bearing)
+        if (!MapFollowPolicy.shouldRequest(
+                nowMs = now,
+                lastRequestAtMs = lastRequestAt,
+                needsInitial = needsInitial,
+                movedMeters = moved,
+                turnedDegrees = turned,
+                following = MapCameraStore.followGps,
+            )
+        ) {
+            return
         }
         pendingCameraUpdate = false
         lastCameraRevision = MapCameraStore.revision
@@ -120,14 +129,16 @@ class MapSnapshotController(context: Context) {
         request(lat, lon, zoom, bearing)
     }
 
-    private fun movedEnough(lat: Double, lon: Double, bearing: Float): Boolean {
-        val oldLat = lastLat ?: return true
-        val oldLon = lastLon ?: return true
+    private fun movedMeters(lat: Double, lon: Double): Float {
+        val oldLat = lastLat ?: return Float.MAX_VALUE
+        val oldLon = lastLon ?: return Float.MAX_VALUE
         val distance = FloatArray(1)
         Location.distanceBetween(oldLat, oldLon, lat, lon, distance)
-        val turn = abs(((bearing - lastBearing + 540f) % 360f) - 180f)
-        return distance[0] >= 20f || turn >= 20f
+        return distance[0]
     }
+
+    private fun turnedDegrees(bearing: Float): Float =
+        abs(((bearing - lastBearing + 540f) % 360f) - 180f)
 
     private fun request(lat: Double, lon: Double, zoom: Double, bearing: Float) {
         inFlight = true
@@ -186,7 +197,6 @@ class MapSnapshotController(context: Context) {
         private const val TAG = "MapSnapshot"
         private const val STYLE_URL = "https://tiles.openfreemap.org/styles/dark"
         private const val ZOOM = 15.5
-        private const val MIN_INTERVAL_MS = 2_500L
         private const val RETRY_MS = 10_000L
         private const val DEFAULT_LAT = 43.6532
         private const val DEFAULT_LON = -79.3832

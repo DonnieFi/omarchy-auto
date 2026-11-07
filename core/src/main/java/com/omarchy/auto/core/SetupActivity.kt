@@ -38,6 +38,7 @@ class SetupActivity : Activity() {
     private lateinit var customBackgroundStatus: TextView
     private var theme = Themes.all.first()
     private var isLauncher = false
+    private var pendingNavigate: NavigateIntent.Request? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,6 +51,7 @@ class SetupActivity : Activity() {
         OaLog.init(this)
         isLauncher = intent.getBooleanExtra(EXTRA_LAUNCHER, false)
         theme = ThemeStore.current()
+        pendingNavigate = NavigateIntent.parse(intent?.data)
         window.setBackgroundDrawable(ColorDrawable(theme.background))
 
         val column = LinearLayout(this).apply {
@@ -61,6 +63,10 @@ class SetupActivity : Activity() {
         column.addView(label("OMARCHY", 30f, theme.accent, bold = true))
         column.addView(label("// AUTO · SETUP", 14f, theme.dim, letterSpacing = 0.12f))
         column.addView(space(20))
+        pendingNavigate?.let { request ->
+            column.addView(navigatePrompt(request))
+            column.addView(space(16))
+        }
 
         column.addView(label("PERMISSIONS", 12f, theme.dim, letterSpacing = 0.12f))
         status = label("", 14f, theme.foreground).apply {
@@ -107,8 +113,10 @@ class SetupActivity : Activity() {
                         "2. Open Omarchy Auto setup and grant the permissions above.\n" +
                         "3. Connect the phone to the car with USB.\n" +
                         "4. Launch Omarchy Auto from the Android Auto launcher.\n\n" +
-                        "The car display is drawn by this app on the NavigationTemplate map surface. " +
-                        "The host still owns the surrounding Android Auto action strip.\n\n" +
+                        "On Android Auto the car shows the map. Turn instructions and arrival " +
+                        "time use the host navigation card. Search, zoom, and settings are on " +
+                        "the host action strips. YouTube, browsers, and message lists stay off " +
+                        "that map.\n\n" +
                         "Unknown sources is not required for a Play-installed build. If you use an " +
                         "ADB-sideloaded Car App Library build, Android Auto may hide it even with " +
                         "Unknown sources on. See the README.",
@@ -480,6 +488,53 @@ class SetupActivity : Activity() {
 
     private fun space(dp: Int) = TextView(this).apply {
         layoutParams = LinearLayout.LayoutParams(1, dp(dp))
+    }
+
+    private fun navigatePrompt(request: NavigateIntent.Request): LinearLayout {
+        val place = when {
+            !request.query.isNullOrBlank() -> request.query
+            request.hasCoordinates -> "Pinned place"
+            else -> "This place"
+        }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 0, 0, dp(8))
+            addView(label("NAVIGATION REQUEST", 12f, theme.dim, letterSpacing = 0.12f))
+            addView(label(place, 16f, theme.foreground, bold = true).apply {
+                setPadding(0, dp(8), 0, dp(12))
+            })
+            addView(button("START ROUTE") {
+                val current = pendingNavigate ?: return@button
+                pendingNavigate = null
+                visibility = View.GONE
+                confirmNavigate(current)
+            })
+            addView(space(8))
+            addView(button("NOT NOW") {
+                pendingNavigate = null
+                visibility = View.GONE
+            })
+        }
+    }
+
+    private fun confirmNavigate(request: NavigateIntent.Request) {
+        if (request.hasCoordinates) {
+            NavigationController.selectDestination(
+                SearchCandidate(
+                    title = request.query?.takeIf { it.isNotBlank() } ?: "Pinned place",
+                    subtitle = "",
+                    latitude = request.latitude ?: return,
+                    longitude = request.longitude ?: return,
+                ),
+                autoStartNav = true,
+            )
+            Toast.makeText(this, "Route queued for the car map", Toast.LENGTH_LONG).show()
+            return
+        }
+        val query = request.query?.trim().orEmpty()
+        if (query.isEmpty()) return
+        NavigationController.searchAddress(query)
+        Toast.makeText(this, "Searching for $query", Toast.LENGTH_LONG).show()
     }
 
     private fun dp(value: Int): Int =

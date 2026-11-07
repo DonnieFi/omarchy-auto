@@ -121,6 +121,18 @@ class CarSurfaceRenderer(
         renderer.setSafeArea(rect)
     }
 
+    fun dismissDistractions() {
+        if (stopped) return
+        handler.post {
+            if (stopped) return@post
+            renderer.closeKeyboard()
+            renderer.closeWebApp()
+            renderer.closeNotification()
+            StageWebController.setActive(false)
+            draw()
+        }
+    }
+
     fun scroll(dx: Float, dy: Float) {
         if (stopped) return
         handler.post {
