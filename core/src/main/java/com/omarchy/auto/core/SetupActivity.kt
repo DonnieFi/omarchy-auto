@@ -533,6 +533,7 @@ class SetupActivity : Activity() {
         }
         val query = request.query?.trim().orEmpty()
         if (query.isEmpty()) return
+        NavigationController.setQuery(query)
         NavigationController.searchAddress(query)
         Toast.makeText(this, "Searching for $query", Toast.LENGTH_LONG).show()
     }

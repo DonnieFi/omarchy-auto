@@ -18,18 +18,26 @@ import com.omarchy.auto.core.NavigationController
 /**
  * Host search keyboard and result rows for Android Auto. The custom canvas
  * keyboard is not drawn on the navigation surface. The host blocks the
- * keyboard while driving; this screen is only pushed from a parked-only action.
+ * keyboard while driving but still shows results and speech input.
  */
 class PlaceSearchScreen(carContext: CarContext) : Screen(carContext) {
-    private val listener: (DashboardState) -> Unit = { invalidate() }
+    private var lastResultsStamp = ""
+    private val listener: (DashboardState) -> Unit = {
+        val stamp = resultsStamp()
+        if (stamp != lastResultsStamp) {
+            lastResultsStamp = stamp
+            invalidate()
+        }
+    }
     private val searchHandler = Handler(Looper.getMainLooper())
     private val debouncedSearch = Runnable {
-        val query = NavigationController.searchQuery.trim()
-        if (query.isEmpty()) {
+        val rawQuery = NavigationController.searchQuery
+        if (rawQuery.trim().isEmpty()) {
             NavigationController.clearQuery()
         } else {
-            NavigationController.searchAddress(query)
+            NavigationController.searchAddress(rawQuery)
         }
+        lastResultsStamp = resultsStamp()
         invalidate()
     }
 
@@ -48,14 +56,27 @@ class PlaceSearchScreen(carContext: CarContext) : Screen(carContext) {
             } else {
                 NavigationController.searchAddress(searchText)
             }
+            lastResultsStamp = resultsStamp()
             invalidate()
         }
+    }
+
+    private fun resultsStamp(): String {
+        val nav = NavigationController
+        return listOf(
+            nav.searchResults.size.toString(),
+            nav.searchResults.firstOrNull()?.title.orEmpty(),
+            nav.searchResults.lastOrNull()?.title.orEmpty(),
+            nav.searching.toString(),
+            nav.statusMessage.orEmpty(),
+        ).joinToString("|")
     }
 
     init {
         lifecycle.addObserver(
             object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
+                    lastResultsStamp = resultsStamp()
                     LiveDataStore.addListener(listener)
                 }
 
@@ -97,7 +118,7 @@ class PlaceSearchScreen(carContext: CarContext) : Screen(carContext) {
             .setHeaderAction(Action.BACK)
             .setSearchHint("Place or address")
             .setInitialSearchText(NavigationController.searchQuery)
-            .setShowKeyboardByDefault(NavigationController.searchQuery.isBlank())
+            .setShowKeyboardByDefault(true)
         if (NavigationController.searching) {
             builder.setLoading(true)
         } else {

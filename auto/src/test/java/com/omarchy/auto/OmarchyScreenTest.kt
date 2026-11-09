@@ -259,6 +259,20 @@ class OmarchyScreenTest {
     }
 
     @Test
+    fun searchAddressPreservesTrailingSpaceAndCarGuidanceShowsWhileActive() {
+        NavigationController.synchronousForTest = true
+        NavigationController.searchTransport = { _, _, _ ->
+            listOf(SearchCandidate("King Street", "Toronto", 43.65, -79.38))
+        }
+        NavigationController.searchAddress("king ")
+        assertEquals("king ", NavigationController.searchQuery)
+        assertEquals(
+            listOf("King Street"),
+            NavigationController.searchResults.map { it.title },
+        )
+    }
+
+    @Test
     fun offRoutePublishesAMessageAndReplacesHeadingWithRecalculate() {
         val carContext = TestCarContext.createCarContext(ApplicationProvider.getApplicationContext())
         val screen = OmarchyScreen(carContext)

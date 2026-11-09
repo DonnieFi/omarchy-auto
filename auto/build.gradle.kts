@@ -36,8 +36,8 @@ android {
         applicationId = "com.omarchy.auto"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.1.12"
+        versionCode = 15
+        versionName = "0.1.14"
         buildConfigField("String", "CRASH_TOKEN", "\"${crashToken.replace("\"", "")}\"")
     }
 

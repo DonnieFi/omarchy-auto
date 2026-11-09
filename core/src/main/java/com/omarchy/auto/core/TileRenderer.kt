@@ -1637,10 +1637,11 @@ class TileRenderer {
         val unit = rawUnit.coerceAtLeast(0.45f)
         drawMapLayer(canvas, area, theme, state, unit)
         val overlay = carOverlayRect(area, unit)
+        val hasGuidance = drawCarGuidance(canvas, overlay, theme, state, unit)
         drawCompactSpeed(canvas, overlay, theme, state, unit, alignBottom = true)
         val credit = "OpenFreeMap · OSM"
         val creditSize = 11f * unit
-        val speedPanelH = 58f * unit
+        val speedPanelH = 76f * unit
         text(
             canvas,
             credit,
@@ -1699,7 +1700,7 @@ class TileRenderer {
             mode = Mode.CAR,
             mapFillsCanvas = true,
             drawsCustomRail = false,
-            drawsManeuverBanner = false,
+            drawsManeuverBanner = hasGuidance,
             drawsKeyboard = false,
             drawsNotificationList = false,
             drawsWebStage = false,
@@ -1729,6 +1730,75 @@ class TileRenderer {
         return if (inner.width() > 48f && inner.height() > 48f) inner else area
     }
 
+    /**
+     * Canvas fallback for turn prompts. The host routing card is authoritative,
+     * but this card guarantees a visible instruction when the host card is
+     * hidden or suppressed. Drawn only while routing is active.
+     */
+    private fun drawCarGuidance(
+        canvas: Canvas,
+        overlay: RectF,
+        theme: OmarchyTheme,
+        state: DashboardState,
+        unit: Float,
+    ): Boolean {
+        val instruction = NavigationController.currentInstruction()
+        val status = NavigationController.statusMessage
+        val dest = NavigationController.destination
+        val navState = NavigationController.navState
+        if (instruction == null && status == null && dest == null) return false
+        val primary = (instruction ?: status ?: dest?.name.orEmpty()).ifBlank { return false }
+        val bannerWidth = minOf(overlay.width() * 0.52f, 340f * unit).coerceAtLeast(180f * unit)
+        val banner = RectF(
+            overlay.left,
+            overlay.top,
+            (overlay.left + bannerWidth).coerceAtMost(overlay.right),
+            overlay.top + 64f * unit,
+        )
+        fill.style = Paint.Style.FILL
+        fill.color = withAlpha(theme.background, 225)
+        canvas.drawRoundRect(banner, 3f * unit, 3f * unit, fill)
+        stroke.style = Paint.Style.STROKE
+        stroke.strokeWidth = 1.5f * unit
+        stroke.color = when (navState) {
+            NavState.ACTIVE -> theme.green
+            NavState.ROUTE_ERROR,
+            NavState.LOCATION_REQUIRED -> theme.red
+            else -> theme.accent
+        }
+        canvas.drawRoundRect(banner, 3f * unit, 3f * unit, stroke)
+        text(
+            canvas,
+            primary,
+            banner.left + 10f * unit,
+            banner.top + 24f * unit,
+            12f * unit,
+            theme.foreground,
+            bold = true,
+            maxWidth = banner.width() - 20f * unit,
+        )
+        val subline = if (navState == NavState.ACTIVE && NavigationController.remainingDistanceMeters > 0.0) {
+            val dist = NavigationController.formatDistance(NavigationController.remainingDistanceMeters)
+            val eta = NavigationController.formatDuration(NavigationController.displayedRemainingDurationSeconds())
+            val target = dest?.name ?: ""
+            "$dist · ETA $eta · $target"
+        } else {
+            status ?: dest?.displayName.orEmpty()
+        }
+        if (subline.isNotBlank()) {
+            text(
+                canvas,
+                subline,
+                banner.left + 10f * unit,
+                banner.bottom - 10f * unit,
+                9f * unit,
+                theme.dim,
+                maxWidth = banner.width() - 20f * unit,
+            )
+        }
+        return true
+    }
+
     private fun drawCompactSpeed(
         canvas: Canvas,
         overlay: RectF,
@@ -1737,8 +1807,8 @@ class TileRenderer {
         unit: Float,
         alignBottom: Boolean,
     ) {
-        val panelH = 58f * unit
-        val panelW = 132f * unit
+        val panelH = 76f * unit
+        val panelW = 190f * unit
         val top = if (alignBottom) overlay.bottom - panelH else overlay.top
         val panel = RectF(overlay.left, top, overlay.left + panelW, top + panelH)
         fill.style = Paint.Style.FILL
@@ -1749,12 +1819,12 @@ class TileRenderer {
         stroke.color = theme.border
         canvas.drawRoundRect(panel, 4f * unit, 4f * unit, stroke)
         val speedText = state.speedKph?.let { "%.0f".format(Locale.US, it) } ?: "--"
-        val baseline = panel.top + 32f * unit
-        text(canvas, speedText, panel.left + 10f * unit, baseline, 26f * unit, theme.foreground, bold = true)
+        val baseline = panel.bottom - 26f * unit
+        text(canvas, speedText, panel.left + 10f * unit, baseline, 42f * unit, theme.foreground, bold = true)
         text(
             canvas,
             "km/h",
-            panel.left + 12f * unit + measure(speedText, 26f * unit, bold = true),
+            panel.left + 12f * unit + measure(speedText, 42f * unit, bold = true),
             baseline,
             10f * unit,
             theme.dim,
@@ -2035,8 +2105,8 @@ class TileRenderer {
         val panel = RectF(
             content.left + 10f * unit,
             guidanceBottom + 8f * unit,
-            content.left + 156f * unit,
-            guidanceBottom + 64f * unit,
+            content.left + 200f * unit,
+            guidanceBottom + 84f * unit,
         )
         fill.style = Paint.Style.FILL
         fill.color = withAlpha(theme.background, 220)
@@ -2049,10 +2119,10 @@ class TileRenderer {
         val speed = state.speedKph
         val speedText = if (speed != null) "%.0f".format(Locale.US, speed) else "--"
         val speedX = panel.left + 10f * unit
-        val speedBaseline = panel.top + 30f * unit
-        text(canvas, speedText, speedX, speedBaseline, 26f * unit, theme.foreground, bold = true)
+        val speedBaseline = panel.bottom - 26f * unit
+        text(canvas, speedText, speedX, speedBaseline, 42f * unit, theme.foreground, bold = true)
         text(
-            canvas, "km/h", speedX + measure(speedText, 26f * unit, bold = true) + 6f * unit,
+            canvas, "km/h", speedX + measure(speedText, 42f * unit, bold = true) + 6f * unit,
             speedBaseline, 9f * unit, theme.dim,
         )
         val gps = when {
