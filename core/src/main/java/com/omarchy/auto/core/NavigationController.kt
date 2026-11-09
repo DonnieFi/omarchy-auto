@@ -265,7 +265,7 @@ object NavigationController {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return
         val token = searchGeneration.incrementAndGet()
-        searchQuery = trimmed
+        searchQuery = query
         searching = true
         searchResults = emptyList()
         statusMessage = "SEARCHING..."
@@ -288,7 +288,7 @@ object NavigationController {
             }
             lastSearchElapsedMs = (System.currentTimeMillis() - started).coerceAtLeast(0L)
             OaLog.i(TAG, "Search finished in ${lastSearchElapsedMs} ms")
-            if (token != searchGeneration.get() || searchQuery != trimmed) {
+            if (token != searchGeneration.get() || searchQuery.trim() != trimmed) {
                 return@Runnable
             }
             searching = false

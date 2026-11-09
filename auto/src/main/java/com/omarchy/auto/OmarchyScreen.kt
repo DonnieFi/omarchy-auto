@@ -19,7 +19,6 @@ import androidx.car.app.model.ActionStrip
 import androidx.car.app.model.CarIcon
 import androidx.car.app.model.DateTimeWithZone
 import androidx.car.app.model.Distance
-import androidx.car.app.model.ParkedOnlyOnClickListener
 import androidx.car.app.model.Template
 import androidx.car.app.navigation.NavigationManager
 import androidx.car.app.navigation.NavigationManagerCallback
@@ -131,7 +130,7 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
         .addAction(iconAction(R.drawable.ic_zoom_in) { zoomIn() })
         .addAction(iconAction(R.drawable.ic_zoom_out) { zoomOut() })
         .addAction(iconAction(R.drawable.ic_recenter) { recenter() })
-        .addAction(Action.PAN)
+        .addAction(Action.Builder(Action.PAN).build())
         .build()
 
     init {
@@ -389,6 +388,7 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
         }
         val query = request.query?.trim().orEmpty()
         if (query.isEmpty()) return
+        NavigationController.setQuery(query)
         NavigationController.searchAddress(query)
         screenManager.push(PlaceSearchScreen(carContext))
     }
@@ -553,11 +553,14 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
 
     private fun actionStrip(): ActionStrip {
         val strip = ActionStrip.Builder()
+        // Not parked-only: the host hides the SearchTemplate keyboard while
+        // driving but still shows results and speech input. A parked gate
+        // here traps the driver on the map with no way to search or exit.
         strip.addAction(
             Action.Builder()
                 .setTitle("Search")
                 .setIcon(icon(R.drawable.ic_search))
-                .setOnClickListener(ParkedOnlyOnClickListener.create { openSearch() })
+                .setOnClickListener { openSearch() }
                 .build(),
         )
         if (NavigationController.navState == NavState.ACTIVE ||

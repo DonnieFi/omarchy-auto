@@ -370,6 +370,7 @@ class TileView @JvmOverloads constructor(
             TileRenderer.Target.KB_SUBMIT -> {
                 when (renderer.keyboardMode) {
                     TileRenderer.KeyboardMode.MAP_SEARCH -> {
+                        NavigationController.setQuery(renderer.keyboardQuery)
                         NavigationController.searchAddress(renderer.keyboardQuery)
                     }
                     TileRenderer.KeyboardMode.WEB_INPUT -> {
