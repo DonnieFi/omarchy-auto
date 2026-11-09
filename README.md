@@ -51,11 +51,12 @@ Built and checked on this machine:
   configured in Setup (`MEDIA TILE APP`).
 - Android Auto 0.1.1 was verified on the owner's real Kia Android Auto screen
   over USB using Play Internal App Sharing. That build drew the phone-style
-  shell on the car surface. Current source is **0.1.12** (versionCode 13). It
+  shell on the car surface. Current source is **0.1.16** (versionCode 17). It
   keeps the OpenFreeMap dark basemap, the unified `MEDIA TILE APP` selector,
   and opt-in crash reporting / `SEND LOGS`, and it limits the Android Auto
-  surface to the map. Host templates carry the maneuver, lanes, and ETA.
-  That map-only guidance has unit tests and has not had a head-unit pass.
+  surface to the map with a host-rendered hub for Search, Media,
+  Notifications, and Settings. Host templates carry the maneuver, lanes, and
+  ETA. That map-only guidance has unit tests and has not had a head-unit pass.
 - The Desktop Head Unit was attempted, but the emulator image's Android Auto
   app is a Play Store stub and the image has no Play Store.
 
@@ -218,7 +219,7 @@ Without it the UI says so instead of inventing data.
 
 ### Android Auto — test install
 
-Current test build: **0.1.12** (versionCode 13). Build the signed AAB with:
+Current test build: **0.1.16** (versionCode 17). Build the signed AAB with:
 
 ```sh
 ./gradlew :auto:bundleRelease
@@ -235,10 +236,18 @@ draws the map full-bleed into `NavigationTemplate` through
 `AppManager.setSurfaceCallback`. The canvas is the map, the route, the vehicle
 marker, compact speed, and the OpenFreeMap / OSM credit. Maneuver text, lane
 arrows, and the travel estimate are host `RoutingInfo` and `TravelEstimate`.
-Search is a host `SearchTemplate`, opened from a parked-only action. The main
-strip is Search, Heading, and Settings while idle. Stop is added while a route
-is active. Recalculate replaces Heading when the car is off the route. The map
-strip is icon-only: zoom in, zoom out, recenter, and pan.
+Search is a host `SearchTemplate` opened from the Search action; the host
+keeps the keyboard parked-only while voice input and result rows still work
+while driving. **Menu** opens the Omarchy hub, a host `ListTemplate` with Map,
+Search, Media, Notifications, and Settings. Settings holds the theme picker,
+map orientation/recenter, phone setup, and About. The hub is pushed over the
+map, so the navigation session and trip updates stay alive while Media or
+Settings are open; **Map** pops back to the live map. A cold idle start shows
+the hub automatically after the first map template; a NAVIGATE/geo intent opens
+the map directly. The main strip is Search, Menu, and Heading while idle. End
+is added while a route is active. Reroute replaces Heading when the car is off
+the route. Retry replaces it on route/location errors. The map strip is
+icon-only: zoom in, zoom out, recenter, and pan.
 Video, browsers, the custom keyboard, the notification list, and the action
 rail are not drawn on that surface, including when the host reports parked.
 
@@ -276,8 +285,12 @@ core/                         shared Kotlin Android library
 
 auto/                         Android Auto app (com.omarchy.auto)
   OmarchyCarAppService        CarAppService, foreground live-data service
-  OmarchyScreen               NavigationTemplate, routing card, action strips
-  PlaceSearchScreen           host SearchTemplate (parked-only)
+  OmarchyScreen               root NavigationTemplate, routing card, action strips
+  CarHomeScreen               host ListTemplate hub: Map, Search, Media, Notifications, Settings
+  CarMediaScreen              driving-safe now playing + play/pause/next/previous
+  CarCommsScreen              notification list (titles) + parked-only detail
+  PlaceSearchScreen           host SearchTemplate (voice while driving; host keyboard parked-only)
+  CarSettingsScreen           host settings ListTemplate (theme, map, phone setup, about)
   NavigationAlerts            guidance notification, separate from the foreground service
   AaosHostUx                  AAOS parked/driving reflection; absent on phones
   CarSurfaceRenderer          Surface.lockCanvas -> TileRenderer map path
@@ -308,7 +321,7 @@ prototype for future Linux work.
 | Rotation | Portrait/landscape reflow verified on the S24 FE |
 | Media play/pause/previous/next | Phone launcher via MediaTransport. Not on the Android Auto surface |
 | AA NavigationTemplate + SurfaceCallback | Map-only canvas in current source; 0.1.1 shell was seen on a Kia; this guidance has no head-unit pass |
-| AA host cards and strips | Routing card, travel estimate, parked-only search, map zoom/recenter/pan; unit-tested |
+| AA host cards and strips | Routing card, travel estimate, search (host keyboard parked-only, voice while driving), in-car hub with media/notifications/settings, map zoom/recenter/pan; unit-tested |
 | Turn-by-turn | Public OSRM demo, roundabout exit, lane arrows when OSM has them, off-route message until Recalculate, ETA held across small changes |
 | Real map | OpenFreeMap dark style via MapLibre snapshots on the phone Drive stage and the AA map surface, plus a live location puck |
 | Diagnostics | Opt-in crash queue + `SEND LOGS` share button in Setup |

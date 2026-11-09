@@ -9,6 +9,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import androidx.car.app.model.Action
+import androidx.car.app.model.ListTemplate
 import androidx.car.app.model.SearchTemplate
 import androidx.car.app.navigation.model.LaneDirection
 import androidx.car.app.navigation.model.MessageInfo
@@ -71,9 +72,21 @@ class OmarchyScreenTest {
         val template = OmarchyScreen(carContext).onGetTemplate() as NavigationTemplate
         assertNotNull(template.actionStrip)
         assertEquals(
-            listOf("Search", "Heading", "Settings"),
+            listOf("Search", "Menu", "Heading"),
             template.actionStrip!!.actions.map { it.title?.toString() },
         )
+        // Search must stay tappable while driving. A parked-only listener is
+        // disabled by the host, which previously trapped the driver on the map.
+        val searchAction = template.actionStrip!!.actions.first {
+            it.title?.toString() == "Search"
+        }
+        assertNotNull(searchAction.onClickDelegate)
+        assertFalse(searchAction.onClickDelegate!!.isParkedOnly)
+        val menuAction = template.actionStrip!!.actions.first {
+            it.title?.toString() == "Menu"
+        }
+        assertNotNull(menuAction.onClickDelegate)
+        assertFalse(menuAction.onClickDelegate!!.isParkedOnly)
         val mapStrip = template.mapActionStrip
         assertNotNull(mapStrip)
         assertTrue(mapStrip!!.actions.any { it.type == Action.TYPE_PAN })
@@ -131,7 +144,7 @@ class OmarchyScreenTest {
         assertTrue(step.lanes[1].directions[0].isRecommended)
         assertEquals(LaneDirection.SHAPE_NORMAL_LEFT, step.lanes[1].directions[0].shape)
         assertTrue(template.actionStrip!!.actions.map { it.title?.toString() }.contains("Heading"))
-        assertFalse(template.actionStrip!!.actions.map { it.title?.toString() }.contains("Recalculate"))
+        assertFalse(template.actionStrip!!.actions.map { it.title?.toString() }.contains("Reroute"))
     }
 
     @Test
@@ -273,7 +286,198 @@ class OmarchyScreenTest {
     }
 
     @Test
-    fun offRoutePublishesAMessageAndReplacesHeadingWithRecalculate() {
+    fun searchTemplateKeepsTheLastNonBlankVoiceTranscript() {
+        val carContext = TestCarContext.createCarContext(ApplicationProvider.getApplicationContext())
+        NavigationController.setQuery("")
+        val screen = PlaceSearchScreen(carContext)
+
+        val first = screen.onGetTemplate() as SearchTemplate
+        assertNull(first.initialSearchText)
+        assertTrue(first.isShowKeyboardByDefault)
+
+        val callback = first.searchCallbackDelegate
+        val done = object : androidx.car.app.OnDoneCallback {}
+        callback.sendSearchTextChanged("123 Main Street", done)
+        assertEquals("123 Main Street", NavigationController.searchQuery)
+
+        // Hosts clear the box around a voice session. A blank update must not
+        // erase the transcript or cancel the pending/running search.
+        callback.sendSearchTextChanged("", done)
+        assertEquals("123 Main Street", NavigationController.searchQuery)
+
+        // The refresh that delivers results restores the transcript.
+        val second = screen.onGetTemplate() as SearchTemplate
+        assertEquals("123 Main Street", second.initialSearchText)
+    }
+
+    @Test
+    fun blankHostUpdateDoesNotCancelTheTranscriptSearch() {
+        NavigationController.synchronousForTest = true
+        NavigationController.searchTransport = { _, _, _ ->
+            listOf(SearchCandidate("123 Main Street", "Toronto", 43.65, -79.38))
+        }
+        val carContext = TestCarContext.createCarContext(ApplicationProvider.getApplicationContext())
+        NavigationController.setQuery("")
+        val screen = PlaceSearchScreen(carContext)
+        val template = screen.onGetTemplate() as SearchTemplate
+        val callback = template.searchCallbackDelegate
+        val done = object : androidx.car.app.OnDoneCallback {}
+        callback.sendSearchTextChanged("123 Main Street", done)
+        // The host clears the box and submits an empty term after the voice
+        // session. The pending transcript search must still run.
+        callback.sendSearchSubmitted("", done)
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            .idleFor(800, java.util.concurrent.TimeUnit.MILLISECONDS)
+        assertEquals(
+            listOf("123 Main Street"),
+            NavigationController.searchResults.map { it.title },
+        )
+    }
+
+    @Test
+    fun prefilledSearchKeepsTheQueryInTheFirstTemplate() {
+        val carContext = TestCarContext.createCarContext(ApplicationProvider.getApplicationContext())
+        NavigationController.setQuery("Queen Street")
+        val template = PlaceSearchScreen(carContext).onGetTemplate() as SearchTemplate
+        assertEquals("Queen Street", template.initialSearchText)
+        assertFalse(template.isShowKeyboardByDefault)
+    }
+
+    @Test
+    fun carSurfaceDrawsAGuidanceCardWhileNavigating() {
+        NavigationController.synchronousForTest = true
+        NavigationController.routeTransport = { oLat, oLon, dLat, dLon ->
+            ParsedRoute(
+                geometry = listOf(oLat to oLon, dLat to dLon),
+                steps = listOf(
+                    RouteStep("TURN LEFT", "Yonge St", 400.0, 80.0, dLat, dLon, oLat, oLon),
+                ),
+                totalDistanceMeters = 400.0,
+                totalDurationSeconds = 80.0,
+            )
+        }
+        val now = System.currentTimeMillis()
+        LiveDataStore.setLocationFix(30f, true, 43.6532, -79.3832, 0f, 5f, now)
+        NavigationController.selectDestination(
+            SearchCandidate("Yonge", "Toronto", 43.66, -79.37),
+            autoStartNav = true,
+            nowMs = now,
+        )
+        val renderer = TileRenderer()
+        val canvas = Canvas(Bitmap.createBitmap(1280, 720, Bitmap.Config.ARGB_8888))
+        renderer.draw(canvas, 1280, 720, LiveDataStore.state, 0, TileRenderer.Mode.CAR)
+        val frame = renderer.lastFrame
+        assertNotNull(frame)
+        assertTrue(frame!!.mapFillsCanvas)
+        assertTrue(frame.drawsManeuverBanner)
+        assertFalse(frame.drawsCustomRail)
+        assertFalse(frame.drawsKeyboard)
+    }
+
+    @Test
+    fun carSettingsThemeRowIsClickable() {
+        val carContext = TestCarContext.createCarContext(ApplicationProvider.getApplicationContext())
+        val screen = CarSettingsScreen(carContext)
+        val template = screen.onGetTemplate() as ListTemplate
+        val themeRow = template.singleList!!.items
+            .filterIsInstance<androidx.car.app.model.Row>()
+            .first { it.title?.toString() == "Theme" }
+        val before = com.omarchy.auto.core.ThemeStore.index
+        val done = object : androidx.car.app.OnDoneCallback {}
+        themeRow.onClickDelegate!!.sendClick(done)
+        assertNotEquals(before, com.omarchy.auto.core.ThemeStore.index)
+        com.omarchy.auto.core.ThemeStore.select(before)
+    }
+
+    @Test
+    fun carSettingsRowsAreTappableAndNoneAreParkedOnly() {
+        val carContext = TestCarContext.createCarContext(ApplicationProvider.getApplicationContext())
+        val template = CarSettingsScreen(carContext).onGetTemplate() as ListTemplate
+        assertEquals("Settings", template.title.toString())
+        val rows = template.singleList!!.items.filterIsInstance<androidx.car.app.model.Row>()
+        val titles = rows.map { it.title?.toString() }
+        assertTrue(titles.contains("Theme"))
+        assertTrue(titles.contains("Map orientation"))
+        assertTrue(titles.contains("Phone setup"))
+        assertTrue(titles.contains("About"))
+        rows.forEach { row ->
+            row.onClickDelegate?.let { assertFalse(it.isParkedOnly) }
+        }
+    }
+
+    @Test
+    fun geoIntentStillReturnsTheMapTemplate() {
+        val carContext = TestCarContext.createCarContext(ApplicationProvider.getApplicationContext())
+        val screen = OmarchyScreen(carContext)
+        screen.offerNavigateIntent(
+            Intent(Intent.ACTION_VIEW, Uri.parse("geo:43.6532,-79.3832")),
+        )
+        assertTrue(screen.onGetTemplate() is NavigationTemplate)
+    }
+
+    @Test
+    fun carHomeIsTheScreenHubWithSafeNotificationTitles() {
+        val carContext = TestCarContext.createCarContext(ApplicationProvider.getApplicationContext())
+        val template = CarHomeScreen(carContext).onGetTemplate() as ListTemplate
+        assertEquals("OMARCHY", template.title.toString())
+        val rows = template.singleList!!.items.filterIsInstance<androidx.car.app.model.Row>()
+        val titles = rows.map { it.title?.toString() }
+        assertEquals(
+            listOf("Map", "Search", "Media", "Notifications", "Settings"),
+            titles,
+        )
+        val mapRow = rows.first { it.title?.toString() == "Map" }
+        assertNotNull(mapRow.onClickDelegate)
+        assertFalse(mapRow.onClickDelegate!!.isParkedOnly)
+        val notifications = rows.first { it.title?.toString() == "Notifications" }
+        assertNotNull(notifications.onClickDelegate)
+        assertFalse(notifications.onClickDelegate!!.isParkedOnly)
+        val media = rows.first { it.title?.toString() == "Media" }
+        assertFalse(media.onClickDelegate!!.isParkedOnly)
+    }
+
+    @Test
+    fun carMediaTemplateOffersSafeTransportControls() {
+        LiveDataStore.setMediaAccess(true)
+        LiveDataStore.setMedia(
+            com.omarchy.auto.core.MediaSnapshot(
+                title = "Nightcall",
+                artist = "Kavinsky",
+                album = "OutRun",
+                playing = true,
+                source = "Spotify",
+            ),
+        )
+        val carContext = TestCarContext.createCarContext(ApplicationProvider.getApplicationContext())
+        val template = CarMediaScreen(carContext).onGetTemplate() as ListTemplate
+        assertEquals("Media", template.title.toString())
+        val titles = template.singleList!!.items
+            .filterIsInstance<androidx.car.app.model.Row>()
+            .map { it.title?.toString() }
+        assertTrue(titles.contains("Pause"))
+        assertTrue(titles.contains("Next track"))
+        assertTrue(titles.contains("Previous track"))
+        LiveDataStore.resetForTest()
+    }
+
+    @Test
+    fun carCommsTemplateShowsTitlesButNotBodies() {
+        LiveDataStore.setNotificationAccess(true)
+        LiveDataStore.addNotification(
+            NotificationItem("k1", "Messages", "Alex", "Secret body text", 1_000L),
+        )
+        val carContext = TestCarContext.createCarContext(ApplicationProvider.getApplicationContext())
+        val template = CarCommsScreen(carContext).onGetTemplate() as ListTemplate
+        assertEquals("Notifications", template.title.toString())
+        val rows = template.singleList!!.items.filterIsInstance<androidx.car.app.model.Row>()
+        val titles = rows.map { it.title?.toString() }
+        assertTrue(titles.contains("Alex"))
+        assertFalse(rows.any { row -> row.texts.any { it.toString().contains("Secret body") } })
+        LiveDataStore.resetForTest()
+    }
+
+    @Test
+    fun offRoutePublishesAMessageAndReplacesHeadingWithReroute() {
         val carContext = TestCarContext.createCarContext(ApplicationProvider.getApplicationContext())
         val screen = OmarchyScreen(carContext)
         val now = System.currentTimeMillis()
@@ -297,7 +501,7 @@ class OmarchyScreenTest {
         val template = screen.onGetTemplate() as NavigationTemplate
         assertTrue(template.navigationInfo is MessageInfo)
         val titles = template.actionStrip!!.actions.map { it.title?.toString() }
-        assertEquals(listOf("Search", "Stop", "Recalculate", "Settings"), titles)
+        assertEquals(listOf("Search", "Menu", "Reroute", "End"), titles)
         assertEquals(4, template.mapActionStrip!!.actions.size)
     }
 
