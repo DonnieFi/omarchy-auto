@@ -50,6 +50,15 @@ object BackgroundStore {
     var skipLocalOverrides: Boolean = false
         private set
 
+    fun resetForTest() {
+        prefs?.edit()?.clear()?.commit()
+        customPath = null
+        enabled = false
+        skipLocalOverrides = false
+        revision++
+        AppBackground.invalidate()
+    }
+
     fun init(context: Context) {
         if (prefs != null) return
         prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

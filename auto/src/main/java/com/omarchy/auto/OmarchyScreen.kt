@@ -10,7 +10,6 @@ import android.os.Handler
 import android.os.Looper
 import androidx.car.app.AppManager
 import androidx.car.app.CarContext
-import androidx.car.app.CarToast
 import androidx.car.app.Screen
 import androidx.car.app.SurfaceCallback
 import androidx.car.app.SurfaceContainer
@@ -36,6 +35,7 @@ import androidx.core.graphics.drawable.IconCompat
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
+import com.omarchy.auto.core.CarPlatformPolicy
 import com.omarchy.auto.core.DashboardState
 import com.omarchy.auto.core.DistractionLock
 import com.omarchy.auto.core.LiveDataStore
@@ -46,7 +46,6 @@ import com.omarchy.auto.core.NavState
 import com.omarchy.auto.core.RouteLane
 import com.omarchy.auto.core.RouteStep
 import com.omarchy.auto.core.SearchCandidate
-import com.omarchy.auto.core.SetupActivity
 import com.omarchy.auto.core.StageWebController
 import com.omarchy.auto.core.diag.OaLog
 import java.util.TimeZone
@@ -65,6 +64,20 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
     private var tripStamp = ""
     private var alertKey = ""
 
+    private val shellHost = object : CarShellHost {
+        override fun openSearch() {
+            this@OmarchyScreen.openSearch()
+        }
+
+        override fun openNotifications() {
+            this@OmarchyScreen.openNotifications()
+        }
+
+        override fun openSettings() {
+            this@OmarchyScreen.openSettings()
+        }
+    }
+
     private val autoDriveTick = object : Runnable {
         override fun run() {
             if (!NavigationController.advanceAutoDrive()) return
@@ -77,6 +90,7 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
 
     private val dataListener: (DashboardState) -> Unit = {
         syncNavigationManager()
+        syncGuidanceAlert()
         surfaceRenderer?.requestDraw()
         refreshTemplate()
     }
@@ -85,7 +99,7 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
         override fun onSurfaceAvailable(surfaceContainer: SurfaceContainer) {
             val surface = surfaceContainer.surface ?: return
             surfaceRenderer?.stop()
-            surfaceRenderer = CarSurfaceRenderer(surface, carContext).also {
+            surfaceRenderer = CarSurfaceRenderer(surface, carContext, shellHost).also {
                 if (surfaceContainer.width > 0 && surfaceContainer.height > 0) {
                     it.setSafeArea(Rect(0, 0, surfaceContainer.width, surfaceContainer.height))
                 } else {
@@ -167,18 +181,14 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
         lifecycle.addObserver(
             object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
-                    LiveDataStore.addListener(dataListener)
                     applyPendingNavigation()
                     syncNavigationManager()
                     surfaceRenderer?.requestDraw()
                     refreshTemplate()
                 }
 
-                override fun onStop(owner: LifecycleOwner) {
-                    LiveDataStore.removeListener(dataListener)
-                }
-
                 override fun onDestroy(owner: LifecycleOwner) {
+                    LiveDataStore.removeListener(dataListener)
                     mainHandler.removeCallbacks(autoDriveTick)
                     AaosHostUx.stop()
                     DistractionLock.onCarSessionEnded()
@@ -198,6 +208,10 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
                 }
             },
         )
+        // Keep trip updates flowing while the Menu, Media or Settings screen
+        // is on top of the map. Removing this listener on onStop froze the host
+        // routing card whenever the driver left the map.
+        LiveDataStore.addListener(dataListener)
     }
 
     internal fun syncNavigationManager() {
@@ -313,17 +327,25 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
 
     fun offerNavigateIntent(intent: Intent?) {
         pendingNav = NavigateIntent.parse(intent?.data) ?: return
+        // A NAVIGATE/geo intent must land on the map, even when the driver is
+        // currently in the hub, media or settings screen.
+        try {
+            screenManager.popToRoot()
+        } catch (error: Exception) {
+            OaLog.w(TAG, "Could not return to the map for a navigate intent", error)
+        }
+        surfaceRenderer?.showMap()
         if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
             applyPendingNavigation()
         }
     }
 
     override fun onGetTemplate(): Template {
+        templateStamp = navStamp()
         val builder = NavigationTemplate.Builder()
             .setActionStrip(actionStrip())
             .setMapActionStrip(mapActionStrip)
         applyHostGuidance(builder)
-        templateStamp = navStamp()
         return builder.build()
     }
 
@@ -374,6 +396,7 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
     private fun applyPendingNavigation() {
         val request = pendingNav ?: return
         pendingNav = null
+        surfaceRenderer?.showMap()
         if (request.hasCoordinates) {
             NavigationController.selectDestination(
                 SearchCandidate(
@@ -394,6 +417,10 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
     }
 
     private fun applyHostGuidance(builder: NavigationTemplate.Builder) {
+        if (!CarPlatformPolicy.allowsHostRoutingCards(CarPlatformPolicy.Surface.ANDROID_AUTO)) {
+            syncGuidanceAlert()
+            return
+        }
         val state = NavigationController.navState
         when (state) {
             NavState.ROUTING -> {
@@ -404,10 +431,9 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
                 if (NavigationController.offRoute) {
                     builder.setNavigationInfo(
                         MessageInfo.Builder("Off the route")
-                            .setText("Tap Recalculate for a new route from here")
+                            .setText("Tap Reroute for a new route from here")
                             .build(),
                     )
-                    publishAlert("off", "Off the route", "Recalculate for a new route")
                 } else {
                 val step = NavigationController.steps.getOrNull(NavigationController.currentStepIndex)
                 val nowMs = System.currentTimeMillis()
@@ -436,14 +462,6 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
                         ).setRemainingTimeSeconds(remDurSec).build(),
                     )
                 }
-                val title = step?.instruction?.ifBlank { "Continue" } ?: "Navigation"
-                val distanceBucket = (NavigationController.nextStepDistanceMeters / 50.0).toInt()
-                val text = buildString {
-                    append(NavigationController.formatDistance(NavigationController.remainingDistanceMeters))
-                    append(" · ")
-                    append(NavigationController.formatDuration(NavigationController.displayedRemainingDurationSeconds()))
-                }
-                publishAlert("$title|$distanceBucket", title, text)
                 }
             }
 
@@ -454,15 +472,52 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
                 builder.setNavigationInfo(
                     MessageInfo.Builder(message).setText("Navigation is paused").build(),
                 )
-                alertKey = ""
-                NavigationAlerts.clear(carContext)
+            }
+
+            else -> Unit
+        }
+        syncGuidanceAlert()
+    }
+
+    /**
+     * Keeps the guidance notification current even when the hub, media or
+     * settings screen is on top of the map. Called from the live-data listener
+     * and from template builds; [publishAlert] dedupes by turn/distance.
+     */
+    private fun syncGuidanceAlert() {
+        when (NavigationController.navState) {
+            NavState.ACTIVE -> {
+                if (NavigationController.offRoute) {
+                    publishAlert("off", "Off the route", "Reroute for a new route")
+                    return
+                }
+                val step = NavigationController.steps.getOrNull(NavigationController.currentStepIndex)
+                val title = step?.instruction?.ifBlank { "Continue" } ?: "Navigation"
+                val distanceBucket = (NavigationController.nextStepDistanceMeters / 50.0).toInt()
+                val text = buildString {
+                    append(NavigationController.formatDistance(NavigationController.remainingDistanceMeters))
+                    append(" · ")
+                    append(NavigationController.formatDuration(NavigationController.displayedRemainingDurationSeconds()))
+                }
+                publishAlert("$title|$distanceBucket", title, text)
+            }
+
+            NavState.LOCATION_REQUIRED,
+            NavState.ROUTE_ERROR,
+            -> {
+                clearAlert()
             }
 
             else -> {
-                alertKey = ""
-                NavigationAlerts.clear(carContext)
+                clearAlert()
             }
         }
+    }
+
+    private fun clearAlert() {
+        if (alertKey.isEmpty()) return
+        alertKey = ""
+        NavigationAlerts.clear(carContext)
     }
 
     private fun publishAlert(key: String, title: String, text: String) {
@@ -563,18 +618,33 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
                 .setOnClickListener { openSearch() }
                 .build(),
         )
-        if (NavigationController.navState == NavState.ACTIVE ||
-            NavigationController.navState == NavState.ROUTING
-        ) {
-            strip.addAction(iconAction(R.drawable.ic_stop, "Stop") {
-                NavigationController.stopNavigation()
+        // The hub replaces the old gear action. Settings now lives inside the
+        // hub so the four-action strip has room for navigation controls.
+        // Keep Menu persistent so the driver is never stranded on the map
+        // after the host auto-hides the action strip.
+        val menuAction = Action.Builder()
+            .setTitle("Menu")
+            .setIcon(icon(R.drawable.ic_menu))
+            .setOnClickListener { openHome() }
+        val apiLevel = try {
+            carContext.carAppApiLevel
+        } catch (_: IllegalStateException) {
+            0
+        }
+        if (apiLevel >= 5) {
+            menuAction.setFlags(Action.FLAG_IS_PERSISTENT)
+        }
+        strip.addAction(menuAction.build())
+        val navState = NavigationController.navState
+        if (NavigationController.offRoute) {
+            strip.addAction(iconAction(R.drawable.ic_recalculate, "Reroute") {
+                NavigationController.recalculate()
                 syncNavigationManager()
                 refreshTemplate()
             })
-        }
-        if (NavigationController.offRoute) {
-            strip.addAction(iconAction(R.drawable.ic_recalculate, "Recalculate") {
-                NavigationController.recalculate()
+        } else if (navState == NavState.ROUTE_ERROR || navState == NavState.LOCATION_REQUIRED) {
+            strip.addAction(iconAction(R.drawable.ic_recalculate, "Retry") {
+                NavigationController.retryRoute()
                 syncNavigationManager()
                 refreshTemplate()
             })
@@ -584,28 +654,38 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
                 surfaceRenderer?.requestDraw()
             })
         }
-        strip.addAction(iconAction(R.drawable.ic_settings, "Settings") { openPhoneSetup() })
+        if (navState == NavState.ACTIVE || navState == NavState.ROUTING) {
+            strip.addAction(iconAction(R.drawable.ic_stop, "End") {
+                NavigationController.stopNavigation()
+                syncNavigationManager()
+                refreshTemplate()
+            })
+        }
         return strip.build()
     }
 
     private fun openSearch() {
-        screenManager.push(PlaceSearchScreen(carContext))
+        OaLog.i(TAG, "Search action pressed")
+        try {
+            screenManager.push(PlaceSearchScreen(carContext))
+        } catch (error: Exception) {
+            OaLog.w(TAG, "Could not open search", error)
+        }
     }
 
-    private fun openPhoneSetup() {
-        CarToast.makeText(
-            carContext,
-            "Continue on your phone only when it is safe.",
-            CarToast.LENGTH_LONG,
-        ).show()
-        try {
-            carContext.startCarApp(
-                Intent(carContext, SetupActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
-        } catch (error: Exception) {
-            OaLog.w(TAG, "Could not open phone setup", error)
-        }
+    private fun openHome() {
+        OaLog.i(TAG, "Menu action pressed")
+        surfaceRenderer?.openSettings()
+    }
+
+    private fun openNotifications() {
+        OaLog.i(TAG, "Notifications action pressed")
+        surfaceRenderer?.showTile(com.omarchy.auto.core.TileId.COMMS)
+    }
+
+    private fun openSettings() {
+        OaLog.i(TAG, "Settings action pressed")
+        surfaceRenderer?.openSettings()
     }
 
     private fun icon(resId: Int): CarIcon =

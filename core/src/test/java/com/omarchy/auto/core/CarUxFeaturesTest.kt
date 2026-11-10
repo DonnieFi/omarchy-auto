@@ -428,19 +428,34 @@ class CarUxFeaturesTest {
     }
 
     @Test
-    fun distractionLockIgnoresAStopAndStaysLockedUntilTheHostParks() {
+    fun distractionLockAndCarPlatformPolicyAllowStationaryCarCommsAndLockWhenMoving() {
         DistractionLock.onCarSessionStarted()
         LiveDataStore.setLocationFix(0f, true, 43.65, -79.38, 0f, 5f, System.currentTimeMillis())
         assertTrue(DistractionLock.suppressesSharedDistractions())
+        assertFalse(CarPlatformPolicy.mapOnly(CarPlatformPolicy.Surface.ANDROID_AUTO))
+        assertFalse(CarPlatformPolicy.allowsHostRoutingCards(CarPlatformPolicy.Surface.ANDROID_AUTO))
+        assertFalse(CarPlatformPolicy.allowsCompactSpeed(CarPlatformPolicy.Surface.ANDROID_AUTO))
+        assertTrue(CarPlatformPolicy.allowsCompactSpeed(CarPlatformPolicy.Surface.PHONE))
+        assertTrue(CarPlatformPolicy.allowsCustomRail(CarPlatformPolicy.Surface.ANDROID_AUTO))
+        assertTrue(CarPlatformPolicy.allowsDecorativeWallpaper(CarPlatformPolicy.Surface.ANDROID_AUTO))
         assertFalse(CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.ANDROID_AUTO))
+        assertFalse(CarPlatformPolicy.allowsCustomKeyboard(CarPlatformPolicy.Surface.ANDROID_AUTO))
         assertFalse(CarPlatformPolicy.allowsCustomKeyboard(CarPlatformPolicy.Surface.PHONE))
+        assertFalse(CarPlatformPolicy.allowsNotificationList(CarPlatformPolicy.Surface.PHONE))
+        // Stationary (0 km/h) on Android Auto projection allows in-stage Comms when HostUx is UNKNOWN.
+        assertTrue(CarPlatformPolicy.allowsNotificationList(CarPlatformPolicy.Surface.ANDROID_AUTO))
+        // Moving (> 2 km/h) locks Comms on Android Auto projection.
+        LiveDataStore.setLocationFix(15f, true, 43.65, -79.38, 0f, 5f, System.currentTimeMillis())
         assertFalse(CarPlatformPolicy.allowsNotificationList(CarPlatformPolicy.Surface.ANDROID_AUTO))
         DistractionLock.onHostUx(DistractionLock.HostUx.PARKED)
         assertFalse(DistractionLock.suppressesSharedDistractions())
         assertFalse(CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.ANDROID_AUTO))
+        assertFalse(CarPlatformPolicy.allowsCustomKeyboard(CarPlatformPolicy.Surface.ANDROID_AUTO))
+        assertTrue(CarPlatformPolicy.allowsNotificationList(CarPlatformPolicy.Surface.ANDROID_AUTO))
         assertTrue(CarPlatformPolicy.allowsCustomKeyboard(CarPlatformPolicy.Surface.PHONE))
         DistractionLock.onHostUx(DistractionLock.HostUx.DRIVING)
         assertTrue(DistractionLock.suppressesSharedDistractions())
+        assertFalse(CarPlatformPolicy.allowsNotificationList(CarPlatformPolicy.Surface.ANDROID_AUTO))
         assertFalse(CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.PHONE))
         DistractionLock.onCarSessionEnded()
         assertFalse(DistractionLock.suppressesSharedDistractions())

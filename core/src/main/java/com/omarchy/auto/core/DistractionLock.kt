@@ -9,8 +9,9 @@ package com.omarchy.auto.core
  * locked for the whole session. Ending the session clears the gate so the
  * phone launcher is usable again at the desk.
  *
- * Android Auto's navigation surface additionally refuses video, browsers,
- * and custom text chrome even when parked. See [CarPlatformPolicy].
+ * The Android Auto surface still refuses the in-stage browser and the custom
+ * keyboard, including when parked. The themed shell itself is drawn there.
+ * See [CarPlatformPolicy].
  */
 object DistractionLock {
     enum class HostUx {

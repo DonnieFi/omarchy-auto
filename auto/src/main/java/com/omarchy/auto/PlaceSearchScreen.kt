@@ -18,58 +18,71 @@ import com.omarchy.auto.core.NavigationController
 /**
  * Host search keyboard and result rows for Android Auto. The custom canvas
  * keyboard is not drawn on the navigation surface. The host blocks the
- * keyboard while driving but still shows results and speech input.
+ * keyboard while driving but still shows results, previous results, and
+ * speech input.
+ *
+ * Voice transcripts are protected in both directions: blank host updates are
+ * ignored, searches are started only after the transcript settles, the
+ * template is not rebuilt while a search is in flight, and the last real
+ * transcript is re-sent with result refreshes. Without those guards some
+ * hosts cleared the search box before the driver could tap a result.
  */
 class PlaceSearchScreen(carContext: CarContext) : Screen(carContext) {
+    private var firstTemplate = true
     private var lastResultsStamp = ""
+
     private val listener: (DashboardState) -> Unit = {
-        val stamp = resultsStamp()
-        if (stamp != lastResultsStamp) {
-            lastResultsStamp = stamp
-            invalidate()
+        // Do not rebuild the template while a search is in flight. Some hosts
+        // reset the search box on every update, which loses a voice transcript.
+        if (!NavigationController.searching) {
+            val stamp = resultsStamp()
+            if (stamp != lastResultsStamp) {
+                lastResultsStamp = stamp
+                invalidate()
+            }
         }
     }
+
     private val searchHandler = Handler(Looper.getMainLooper())
     private val debouncedSearch = Runnable {
         val rawQuery = NavigationController.searchQuery
-        if (rawQuery.trim().isEmpty()) {
-            NavigationController.clearQuery()
-        } else {
+        if (rawQuery.isNotBlank()) {
+            // Force the completion update through even if the new results have
+            // the same titles, so the transcript is restored in the host box.
+            lastResultsStamp = ""
             NavigationController.searchAddress(rawQuery)
         }
-        lastResultsStamp = resultsStamp()
-        invalidate()
     }
 
     private val callback = object : SearchTemplate.SearchCallback {
         override fun onSearchTextChanged(searchText: String) {
+            // Hosts clear or rewrite the box around a voice session. Ignoring
+            // blanks keeps the last real transcript and, crucially, leaves the
+            // pending search timer alone. Removing it on a blank update made
+            // the transcript vanish with no results to tap.
+            if (searchText.isBlank()) return
+            // Keep the raw text, including a trailing space. Trimming here
+            // deleted the space a driver had just spoken while typing.
             NavigationController.setQuery(searchText)
             searchHandler.removeCallbacks(debouncedSearch)
             searchHandler.postDelayed(debouncedSearch, SEARCH_DEBOUNCE_MS)
         }
 
         override fun onSearchSubmitted(searchText: String) {
-            NavigationController.setQuery(searchText)
+            // A blank submit often accompanies the host clearing the box after
+            // voice input; do not cancel the pending transcript search.
+            if (searchText.isBlank()) return
             searchHandler.removeCallbacks(debouncedSearch)
-            if (searchText.isBlank()) {
-                NavigationController.clearQuery()
-            } else {
-                NavigationController.searchAddress(searchText)
-            }
-            lastResultsStamp = resultsStamp()
-            invalidate()
+            NavigationController.setQuery(searchText)
+            lastResultsStamp = ""
+            NavigationController.searchAddress(searchText)
         }
     }
 
     private fun resultsStamp(): String {
         val nav = NavigationController
-        return listOf(
-            nav.searchResults.size.toString(),
-            nav.searchResults.firstOrNull()?.title.orEmpty(),
-            nav.searchResults.lastOrNull()?.title.orEmpty(),
-            nav.searching.toString(),
-            nav.statusMessage.orEmpty(),
-        ).joinToString("|")
+        val titles = nav.searchResults.take(6).joinToString("~") { it.title }
+        return "$titles|${nav.statusMessage.orEmpty()}"
     }
 
     init {
@@ -100,34 +113,46 @@ class PlaceSearchScreen(carContext: CarContext) : Screen(carContext) {
                 },
             )
         } else {
-            results.take(6).forEachIndexed { index, candidate ->
+            results.take(6).forEach { candidate ->
                 list.addItem(
                     Row.Builder()
                         .setTitle(candidate.title.ifBlank { "Place" })
                         .addText(candidate.subtitle.ifBlank { candidate.displayName })
                         .setOnClickListener {
                             NavigationController.selectDestination(candidate, autoStartNav = true)
-                            finish()
+                            // Reveal the live map whether search was opened
+                            // from the map, the hub or settings. The map is the
+                            // root screen, so this collapses every screen above
+                            // it instead of returning to a menu while routing.
+                            try {
+                                screenManager.popToRoot()
+                            } catch (_: Exception) {
+                                finish()
+                            }
                         }
                         .build(),
                 )
-                if (index >= 5) return@forEachIndexed
             }
         }
         val builder = SearchTemplate.Builder(callback)
             .setHeaderAction(Action.BACK)
             .setSearchHint("Place or address")
-            .setInitialSearchText(NavigationController.searchQuery)
-            .setShowKeyboardByDefault(true)
-        if (NavigationController.searching) {
-            builder.setLoading(true)
-        } else {
-            builder.setItemList(list.build())
+            .setItemList(list.build())
+        // Re-send the last real transcript on every update. Some hosts clear
+        // the search box after a voice submit; without this the field stays
+        // empty even though results are ready to tap.
+        val query = NavigationController.searchQuery
+        if (query.isNotBlank()) {
+            builder.setInitialSearchText(query)
+        }
+        if (firstTemplate) {
+            builder.setShowKeyboardByDefault(query.isBlank())
+            firstTemplate = false
         }
         return builder.build()
     }
 
     companion object {
-        private const val SEARCH_DEBOUNCE_MS = 400L
+        private const val SEARCH_DEBOUNCE_MS = 700L
     }
 }

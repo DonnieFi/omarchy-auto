@@ -21,10 +21,10 @@ for a 30-minute real-car drive measurement.
   with the same 8 m / 12° gate. The "updating map" badge follows that 8 m move
   or a zoom change of about 0.45. Age alone, while stopped, does not mark the
   bitmap stale.
-- **Android Auto surface:** the canvas is the map, route, marker, compact
-  speed, and attribution. Maneuver text and ETA are host templates, so a GPS
-  fix does not repaint those strings on the bitmap. The phone shell still
-  redraws media, notifications, and the rail.
+- **Android Auto surface:** the canvas is the themed shell. The Drive tile
+  draws the map, route, marker, speed, and attribution. The host routing card
+  still carries maneuver text and ETA. A GPS fix repaints the drive stage,
+  and the shell also redraws media, notifications, and the rail.
 - **Backgrounds:** decoded off the draw thread with latest-request-wins; a
   background change triggers one redraw.
 

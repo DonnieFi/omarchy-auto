@@ -288,7 +288,11 @@ object NavigationController {
             }
             lastSearchElapsedMs = (System.currentTimeMillis() - started).coerceAtLeast(0L)
             OaLog.i(TAG, "Search finished in ${lastSearchElapsedMs} ms")
-            if (token != searchGeneration.get() || searchQuery.trim() != trimmed) {
+            // Only the generation token decides staleness. The host may clear
+            // or rewrite the search box after a voice submit; comparing against
+            // searchQuery would then drop valid results and leave the driver
+            // with an empty field and nothing to tap.
+            if (token != searchGeneration.get()) {
                 return@Runnable
             }
             searching = false

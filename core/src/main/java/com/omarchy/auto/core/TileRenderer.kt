@@ -65,6 +65,9 @@ class TileRenderer {
         MAP_CANDIDATE_SELECT,
         RAIL_CONFIG_TOGGLE,
         MEDIA_TARGET_SELECT,
+        MAP_ORIENTATION_TOGGLE,
+        NOTIF_SCALE_CYCLE,
+        BG_MODE_TOGGLE,
         RAIL_SCROLL_UP,
         RAIL_SCROLL_DOWN,
         RAIL_ITEM,
@@ -114,6 +117,9 @@ class TileRenderer {
         val chips: List<Pair<Int, RectF>>,
         val railToggles: List<Pair<RailItemId, RectF>>,
         val mediaTargets: List<Pair<String, RectF>>,
+        val mapOrientationToggle: RectF? = null,
+        val notifScaleCycle: RectF? = null,
+        val bgModeToggle: RectF? = null,
         val stageOpen: RectF?,
         val playPause: RectF?,
         val prevTrack: RectF?,
@@ -156,6 +162,9 @@ class TileRenderer {
         val setup: RectF?,
         val railToggles: List<Pair<RailItemId, RectF>> = emptyList(),
         val mediaTargets: List<Pair<String, RectF>> = emptyList(),
+        val mapOrientationToggle: RectF? = null,
+        val notifScaleCycle: RectF? = null,
+        val bgModeToggle: RectF? = null,
         val previous: RectF? = null,
         val next: RectF? = null,
         val mediaSessions: List<Pair<String, RectF>> = emptyList(),
@@ -223,6 +232,9 @@ class TileRenderer {
         val setup: RectF? = null,
         val railToggles: List<Pair<RailItemId, RectF>> = emptyList(),
         val mediaTargets: List<Pair<String, RectF>> = emptyList(),
+        val mapOrientationToggle: RectF? = null,
+        val notifScaleCycle: RectF? = null,
+        val bgModeToggle: RectF? = null,
     )
 
     private data class KeyboardHit(
@@ -306,6 +318,13 @@ class TileRenderer {
     @Volatile
     private var overlayKey: String? = null
 
+    /** Surface of the most recent [draw]. Input policy follows that surface. */
+    private var renderMode: Mode = Mode.PHONE
+
+    private fun policySurface(): CarPlatformPolicy.Surface =
+        if (renderMode == Mode.CAR) CarPlatformPolicy.Surface.ANDROID_AUTO
+        else CarPlatformPolicy.Surface.PHONE
+
     fun resetGestureAccumulators() {
         notifDragAccum = 0f
         railDragAccum = 0f
@@ -341,7 +360,7 @@ class TileRenderer {
     }
 
     fun openWebApp(app: StageWebApp) {
-        if (!CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.PHONE)) return
+        if (!CarPlatformPolicy.allowsWebStage(policySurface())) return
         if (selected == TileId.MEDIA && webStageApp == app) {
             selected = null
             webStageApp = null
@@ -377,7 +396,7 @@ class TileRenderer {
     }
 
     fun openKeyboard(mode: KeyboardMode, initialQuery: String = ""): Boolean {
-        if (!CarPlatformPolicy.allowsCustomKeyboard(CarPlatformPolicy.Surface.PHONE)) return false
+        if (!CarPlatformPolicy.allowsCustomKeyboard(policySurface())) return false
         keyboardMode = mode
         keyboardQuery = initialQuery
         return true
@@ -416,7 +435,7 @@ class TileRenderer {
     }
 
     fun scrollRail(delta: Int) {
-        val enabled = RailConfigStore.enabledItems()
+        val enabled = RailConfigStore.enabledItems(policySurface())
         val maxOffset = (enabled.size - MAX_VISIBLE_RAIL).coerceAtLeast(0)
         railScrollOffset = (railScrollOffset + delta).coerceIn(0, maxOffset)
     }
@@ -478,7 +497,7 @@ class TileRenderer {
                 true
             }
             TileId.COMMS -> {
-                if (!CarPlatformPolicy.allowsCommsBrowsing(CarPlatformPolicy.Surface.PHONE)) return false
+                if (!CarPlatformPolicy.allowsCommsBrowsing(policySurface())) return false
                 notifDragAccum += dy
                 var moved = false
                 while (kotlin.math.abs(notifDragAccum) >= 16f) {
@@ -517,17 +536,22 @@ class TileRenderer {
         themeIndex: Int,
         mode: Mode,
     ) {
-        if (mode == Mode.CAR) {
+        renderMode = mode
+        if (CarPlatformPolicy.mapOnly(policySurface())) {
             drawCarNavigationSurface(canvas, width, height, state, themeIndex)
             return
         }
         if (DistractionLock.suppressesSharedDistractions()) {
             if (keyboardMode != KeyboardMode.NONE) closeKeyboard()
-            if (overlayKey != null) closeNotification()
             if (webStageApp != null) closeWebApp()
+        }
+        if (!CarPlatformPolicy.allowsCommsBrowsing(policySurface())) {
+            if (overlayKey != null) closeNotification()
         }
         val theme = Themes.at(themeIndex)
         val car = mode == Mode.CAR
+        // On the car surface, the Omarchy shell spans the full canvas so host
+        // safeArea insets do not shrink or double-frame the stage and rail.
         val area = if (car) {
             RectF(0f, 0f, width.toFloat(), height.toFloat())
         } else {
@@ -538,7 +562,8 @@ class TileRenderer {
                     raw.right.coerceIn(0, width).toFloat(),
                     raw.bottom.coerceIn(0, height).toFloat(),
                 )
-            }?.takeIf { it.width() > 100f && it.height() > 100f } ?: RectF(0f, 0f, width.toFloat(), height.toFloat())
+            }?.takeIf { it.width() > 100f && it.height() > 100f }
+                ?: RectF(0f, 0f, width.toFloat(), height.toFloat())
         }
         val wasMapActive = MapViewport.active
         MapViewport.active = selected == TileId.DRIVE
@@ -562,18 +587,18 @@ class TileRenderer {
         val barScale = topBarScale(car)
 
         canvas.drawColor(theme.background)
-        drawWallpaper(canvas, width, height, area, theme, unit)
+        val drewWallpaper = drawWallpaper(canvas, width, height, area, theme, unit)
 
-        val themeButton = if (car) {
-            null
-        } else {
-            RectF(
-                area.right - margin - 62f * unit * barScale,
-                area.top + (topBarH - 34f * unit * barScale) / 2f,
-                area.right - margin,
-                area.top + (topBarH + 34f * unit * barScale) / 2f,
-            )
-        }
+        val themeBtnW = maxOf(
+            68f * unit * barScale,
+            measure("THEME", 9f * unit * barScale, bold = true) + 20f * unit * barScale,
+        )
+        val themeButton = RectF(
+            area.right - margin - themeBtnW,
+            area.top + (topBarH - 34f * unit * barScale) / 2f,
+            area.right - margin,
+            area.top + (topBarH + 34f * unit * barScale) / 2f,
+        )
         val chips = mutableListOf<Pair<Int, RectF>>()
 
         val railWidth = minOf(
@@ -588,7 +613,7 @@ class TileRenderer {
             tileBottom,
         )
         val railContainer = RectF(railX, tileTop, railX + railWidth, tileBottom)
-        val allRailItems = RailConfigStore.enabledItems()
+        val allRailItems = RailConfigStore.enabledItems(policySurface())
         val hasRailScroll = allRailItems.size > MAX_VISIBLE_RAIL
         val maxRailOffset = (allRailItems.size - MAX_VISIBLE_RAIL).coerceAtLeast(0)
         if (railScrollOffset > maxRailOffset) railScrollOffset = maxRailOffset
@@ -705,6 +730,9 @@ class TileRenderer {
             chips = chips.map { it.first to RectF(it.second) },
             railToggles = stageHit.railToggles.map { it.first to RectF(it.second) },
             mediaTargets = stageHit.mediaTargets.map { it.first to RectF(it.second) },
+            mapOrientationToggle = stageHit.mapOrientationToggle?.let { RectF(it) },
+            notifScaleCycle = stageHit.notifScaleCycle?.let { RectF(it) },
+            bgModeToggle = stageHit.bgModeToggle?.let { RectF(it) },
             stageOpen = stageHit.open?.let { RectF(it) },
             playPause = stageHit.play?.let { RectF(it) },
             prevTrack = stageHit.previous?.let { RectF(it) },
@@ -745,11 +773,11 @@ class TileRenderer {
             mapFillsCanvas = false,
             drawsCustomRail = true,
             drawsManeuverBanner = selected == TileId.DRIVE &&
-                CarPlatformPolicy.allowsCanvasManeuverText(CarPlatformPolicy.Surface.PHONE),
+                CarPlatformPolicy.allowsCanvasManeuverText(policySurface()),
             drawsKeyboard = keyboardHit != null,
             drawsNotificationList = selected == TileId.COMMS && stageHit.notifications.isNotEmpty(),
             drawsWebStage = webStageApp != null,
-            drawsWallpaper = true,
+            drawsWallpaper = drewWallpaper,
         )
     }
 
@@ -792,6 +820,15 @@ class TileRenderer {
         }
         layout.mediaTargets.firstOrNull { it.second.contains(x, y) }?.let {
             return Hit(Target.MEDIA_TARGET_SELECT, key = it.first)
+        }
+        layout.mapOrientationToggle?.takeIf { it.contains(x, y) }?.let {
+            return Hit(Target.MAP_ORIENTATION_TOGGLE)
+        }
+        layout.notifScaleCycle?.takeIf { it.contains(x, y) }?.let {
+            return Hit(Target.NOTIF_SCALE_CYCLE)
+        }
+        layout.bgModeToggle?.takeIf { it.contains(x, y) }?.let {
+            return Hit(Target.BG_MODE_TOGGLE)
         }
         layout.chips.firstOrNull { it.second.contains(x, y) }?.let {
             return Hit(Target.THEME_CHIP, it.first)
@@ -852,6 +889,7 @@ class TileRenderer {
     private fun tileNumber(id: TileId): String =
         if (!FeatureFlags.SHOW_VEHICLE_TILE && id == TileId.HOME) "04" else id.number
 
+    /** @return true only when a background bitmap was painted, not the palette fallback */
     private fun drawWallpaper(
         canvas: Canvas,
         width: Int,
@@ -859,8 +897,9 @@ class TileRenderer {
         area: RectF,
         theme: OmarchyTheme,
         unit: Float,
-    ) {
+    ): Boolean {
         val bitmap = background
+        val drewBitmap = bitmap != null
         if (bitmap != null) {
             val portrait = height > width * 1.25f
             val scale = maxOf(
@@ -968,6 +1007,7 @@ class TileRenderer {
         fill.shader = vignetteShader
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fill)
         fill.shader = null
+        return drewBitmap
     }
 
     private fun drawRailItem(
@@ -1038,7 +1078,7 @@ class TileRenderer {
             RailItemId.MEDIA -> if (state.media != null) "LIVE" else "WAIT"
             RailItemId.COMMS -> if (state.notifications.isNotEmpty()) "${state.notifications.size} NEW" else "0"
             RailItemId.YOUTUBE, RailItemId.CHATGPT, RailItemId.GROK ->
-                if (StageWebController.activeApp == item.webApp) "ACTIVE" else "STAGE"
+                if (StageWebController.active && StageWebController.activeApp == item.webApp) "ACTIVE" else "STAGE"
             RailItemId.VEHICLE -> "MOCK"
             RailItemId.HOME -> if (homeSetupOpen) "SETUP" else "THEME"
         }
@@ -1047,7 +1087,7 @@ class TileRenderer {
             RailItemId.MEDIA -> if (state.media != null) theme.green else theme.dim
             RailItemId.COMMS -> if (state.notifications.isNotEmpty()) theme.accent else theme.dim
             RailItemId.YOUTUBE, RailItemId.CHATGPT, RailItemId.GROK ->
-                if (StageWebController.activeApp == item.webApp) theme.green else theme.accent
+                if (StageWebController.active && StageWebController.activeApp == item.webApp) theme.green else theme.accent
             RailItemId.VEHICLE -> theme.yellow
             RailItemId.HOME -> if (homeSetupOpen) theme.accent else theme.dim
         }
@@ -1130,23 +1170,41 @@ class TileRenderer {
         val legend = "[${tileNumber(id)} · $stageTitle]"
         val legendSize = 11f * stageChrome
         val legendWidth = measure(legend, legendSize, bold = true) + 18f * stageChrome
-        fill.color = withAlpha(theme.background, 235)
-        canvas.drawRect(
-            stage.left + 14f * stageChrome, stage.top - 1f * unit,
-            stage.left + 14f * stageChrome + legendWidth, stage.top + 20f * stageChrome,
-            fill,
-        )
-        text(
-            canvas, legend, stage.left + 22f * stageChrome, stage.top + 14f * stageChrome,
-            legendSize, theme.accent, bold = true,
-        )
 
-        val content = RectF(
-            stage.left + 16f * stageChrome,
-            stage.top + 44f * stageChrome,
-            stage.right - 16f * stageChrome,
-            stage.bottom - 14f * stageChrome,
-        )
+        fun drawLegendBadge() {
+            fill.style = Paint.Style.FILL
+            fill.color = withAlpha(theme.background, 235)
+            canvas.drawRect(
+                stage.left + 14f * stageChrome, stage.top - 1f * unit,
+                stage.left + 14f * stageChrome + legendWidth, stage.top + 20f * stageChrome,
+                fill,
+            )
+            text(
+                canvas, legend, stage.left + 22f * stageChrome, stage.top + 14f * stageChrome,
+                legendSize, theme.accent, bold = true,
+            )
+        }
+
+        val content = when {
+            mode == Mode.CAR && id == TileId.DRIVE -> RectF(
+                stage.left + 2f * unit,
+                stage.top + 2f * unit,
+                stage.right - 2f * unit,
+                stage.bottom - 2f * unit,
+            )
+            mode == Mode.CAR -> RectF(
+                stage.left + 12f * stageChrome,
+                stage.top + 24f * stageChrome,
+                stage.right - 12f * stageChrome,
+                stage.bottom - 10f * stageChrome,
+            )
+            else -> RectF(
+                stage.left + 16f * stageChrome,
+                stage.top + 44f * stageChrome,
+                stage.right - 16f * stageChrome,
+                stage.bottom - 14f * stageChrome,
+            )
+        }
         var driveHit = DriveHit()
         var mediaHit = MediaHit(play = null, previous = null, next = null)
         var commsHit = CommsHit(clear = null, notifications = emptyList())
@@ -1158,14 +1216,14 @@ class TileRenderer {
             }
             TileId.MEDIA -> {
                 if (webStageApp != null &&
-                    !CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.PHONE)
+                    !CarPlatformPolicy.allowsWebStage(policySurface())
                 ) {
                     closeWebApp()
                 }
                 mediaHit = drawMedia(canvas, content, theme, state, stageUnit)
             }
             TileId.COMMS -> {
-                if (!CarPlatformPolicy.allowsCommsBrowsing(CarPlatformPolicy.Surface.PHONE)) {
+                if (!CarPlatformPolicy.allowsCommsBrowsing(policySurface())) {
                     drawLockedPlate(canvas, content, theme, stageUnit, "NOTIFICATIONS LOCKED WHILE DRIVING")
                 } else {
                     commsHit = drawComms(canvas, content, theme, state, stageUnit)
@@ -1178,8 +1236,11 @@ class TileRenderer {
                 )
             }
         }
+        drawLegendBadge()
 
-        val open = if (id != TileId.VEHICLE) {
+        // On Mode.CAR, phone-only launch actions (OPEN MAPS / OPEN PLAYER /
+        // OPEN MESSAGES / OPEN SETTINGS) are omitted so the stage header stays clean.
+        val open = if (mode != Mode.CAR && id != TileId.VEHICLE) {
             val label = when (id) {
                 TileId.DRIVE -> "OPEN MAPS"
                 TileId.MEDIA -> if (webStageApp != null) "OPEN ON PHONE" else "OPEN PLAYER"
@@ -1206,17 +1267,21 @@ class TileRenderer {
         }
 
         var refresh: RectF? = null
-        if (id == TileId.COMMS) {
+        if (id == TileId.COMMS &&
+            (mode != Mode.CAR || CarPlatformPolicy.allowsCommsBrowsing(policySurface()))
+        ) {
             val label = "REFRESH"
             val textSize = 9f * stageChrome
             val buttonWidth = measure(label, textSize, bold = true) + 24f * stageChrome
-            val buttonHeight = 28f * stageChrome
-            val right = open?.left?.minus(8f * stageChrome) ?: (stage.right - 16f * stageChrome)
+            val buttonHeight = if (mode == Mode.CAR) 20f * stageChrome else 28f * stageChrome
+            val top = if (mode == Mode.CAR) stage.top + 2f * stageChrome else stage.top + 6f * stageChrome
+            val right = open?.left?.minus(8f * stageChrome)
+                ?: (stage.right - (if (mode == Mode.CAR) 12f else 16f) * stageChrome)
             refresh = RectF(
                 right - buttonWidth,
-                stage.top + 6f * stageChrome,
+                top,
                 right,
-                stage.top + 6f * stageChrome + buttonHeight,
+                top + buttonHeight,
             )
             drawTextButton(canvas, refresh, label, theme, stageChrome)
         }
@@ -1240,6 +1305,9 @@ class TileRenderer {
             mapNavToggle = driveHit.navToggle,
             railToggles = homeHit.railToggles,
             mediaTargets = homeHit.mediaTargets,
+            mapOrientationToggle = homeHit.mapOrientationToggle,
+            notifScaleCycle = homeHit.notifScaleCycle,
+            bgModeToggle = homeHit.bgModeToggle,
             mediaSessions = mediaHit.sessions,
             webAppButtons = mediaHit.webApps,
             webStageRect = mediaHit.webStageRect,
@@ -1335,8 +1403,9 @@ class TileRenderer {
         val leftWithMode = modeX + modeWidth
         val leftWithoutMode = autoX + autoWidth
 
-        // In CAR mode there is no canvas THEME button; keep a right reserve so
-        // the clock and theme name stay clear of the host ActionStrip corner.
+        // Keep the clock and theme name clear of the theme control. On the car
+        // the host action strip can also sit in that corner; the stable area
+        // inset is what keeps the control tappable.
         val nameRight = if (themeButton != null) {
             themeButton.left - 12f * barUnit
         } else {
@@ -1345,15 +1414,19 @@ class TileRenderer {
         val clusterGap = 16f * barUnit
         val minGap = 14f * barUnit
         val nameSize = 10f * barUnit
+        // On Android Auto, the host dock already displays the clock, so omit
+        // the duplicate canvas clock in the top bar.
+        val showClock = !car
         val clock = clockFormat.format(Date())
         val clockSize = 18f * barUnit
-        val clockWidth = measure(clock, clockSize, bold = true)
+        val clockWidth = if (showClock) measure(clock, clockSize, bold = true) else 0f
         val fullName = Themes.at(themeIndex).name
         val shortName = Themes.at(themeIndex).shortName
 
         fun nameFits(name: String, left: Float): Boolean {
             val nameWidth = measure(name, nameSize)
-            return nameRight - nameWidth - clusterGap - clockWidth >= left + minGap
+            val clockReserve = if (showClock) clusterGap + clockWidth else 0f
+            return nameRight - nameWidth - clockReserve >= left + minGap
         }
 
         var leftEnd = leftWithMode
@@ -1387,12 +1460,14 @@ class TileRenderer {
                 nameSize, theme.dim, maxWidth = nameWidth,
             )
         }
-        val clockRight = nameRight - (if (themeName != null) nameWidth + clusterGap else 0f)
-        val clockLeft = maxOf(clockRight - clockWidth, leftEnd + minGap)
-        text(
-            canvas, clock, clockLeft, baseline + 1f * barUnit, clockSize,
-            theme.foreground, bold = true, maxWidth = (clockRight - clockLeft).coerceAtLeast(1f),
-        )
+        if (showClock) {
+            val clockRight = nameRight - (if (themeName != null) nameWidth + clusterGap else 0f)
+            val clockLeft = maxOf(clockRight - clockWidth, leftEnd + minGap)
+            text(
+                canvas, clock, clockLeft, baseline + 1f * barUnit, clockSize,
+                theme.foreground, bold = true, maxWidth = (clockRight - clockLeft).coerceAtLeast(1f),
+            )
+        }
 
         if (themeButton != null) {
             val buttonChrome = unit * topBarScale(car)
@@ -1505,13 +1580,13 @@ class TileRenderer {
                 val artist = media.artist.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
                 "▶ ${media.title}$artist"
             }
-            state.speedKph != null -> "%.0f km/h".format(Locale.US, state.speedKph)
+            !car && state.speedKph != null -> "%.0f km/h".format(Locale.US, state.speedKph)
             else -> "OMARCHY AUTO"
         }
         val centerSize = (if (car) 12f else 9f) * textUnit
         val speed = state.speedKph
-        val speedText = if (car && hasMedia && speed != null) {
-            "%.0f km/h".format(Locale.US, speed)
+        val speedText = if (car) {
+            speed?.let { "%.0f km/h".format(Locale.US, it) } ?: "-- km/h"
         } else {
             null
         }
@@ -1976,19 +2051,20 @@ class TileRenderer {
         val camZoom = layer.zoom
         val dest = NavigationController.destination
 
-        // Left guidance card. Android Auto does not use this; the host template does.
+        // Authoritative guidance card inside the Omarchy Drive stage.
         val navInstruction = NavigationController.currentInstruction()
         val navStatus = NavigationController.statusMessage
         val navError: String? = null
         val navState = NavigationController.navState
-        var guidanceBottom = content.top + 8f * unit
+        val topInset = if (renderMode == Mode.CAR) 22f * unit else 8f * unit
+        var guidanceBottom = content.top + topInset
         if (dest != null || navInstruction != null || navStatus != null || navError != null) {
             val bannerWidth = minOf(content.width() * 0.46f, 300f * unit).coerceAtLeast(180f * unit)
             val banner = RectF(
                 content.left + 10f * unit,
-                content.top + 8f * unit,
+                content.top + topInset,
                 content.left + 10f * unit + bannerWidth,
-                content.top + 78f * unit,
+                content.top + topInset + 70f * unit,
             )
             guidanceBottom = banner.bottom
             fill.style = Paint.Style.FILL
@@ -2023,7 +2099,9 @@ class TileRenderer {
                 NavigationController.remainingDistanceMeters > 0.0
             ) {
                 val dist = NavigationController.formatDistance(NavigationController.remainingDistanceMeters)
-                val eta = NavigationController.formatDuration(NavigationController.remainingDurationSeconds)
+                val eta = NavigationController.formatDuration(
+                    NavigationController.displayedRemainingDurationSeconds(),
+                )
                 val targetName = dest?.name ?: ""
                 "$dist  ·  ETA $eta  ·  $targetName"
             } else {
@@ -2048,9 +2126,9 @@ class TileRenderer {
             val size = 9f * unit
             val badge = RectF(
                 content.left + 10f * unit,
-                content.top + 8f * unit,
+                content.top + topInset,
                 content.left + 18f * unit + measure(label, size, bold = true) + 12f * unit,
-                content.top + 30f * unit,
+                content.top + topInset + 22f * unit,
             )
             fill.color = withAlpha(theme.background, 215)
             canvas.drawRoundRect(badge, 2f * unit, 2f * unit, fill)
@@ -2101,49 +2179,56 @@ class TileRenderer {
             theme.dim,
         )
 
-        // Compact speed directly under the left guidance card.
-        val panel = RectF(
-            content.left + 10f * unit,
-            guidanceBottom + 8f * unit,
-            content.left + 200f * unit,
-            guidanceBottom + 84f * unit,
-        )
-        fill.style = Paint.Style.FILL
-        fill.color = withAlpha(theme.background, 220)
-        canvas.drawRoundRect(panel, 3f * unit, 3f * unit, fill)
-        stroke.style = Paint.Style.STROKE
-        stroke.strokeWidth = 1f * unit
-        stroke.color = theme.border
-        canvas.drawRoundRect(panel, 3f * unit, 3f * unit, stroke)
+        // Compact speed under the left guidance card on phone; omitted on CAR
+        // where the footer already displays live speed.
+        val showSpeedBox = CarPlatformPolicy.allowsCompactSpeed(policySurface())
+        val speedRightEdge = if (showSpeedBox) {
+            val panel = RectF(
+                content.left + 10f * unit,
+                guidanceBottom + 8f * unit,
+                content.left + 200f * unit,
+                guidanceBottom + 84f * unit,
+            )
+            fill.style = Paint.Style.FILL
+            fill.color = withAlpha(theme.background, 220)
+            canvas.drawRoundRect(panel, 3f * unit, 3f * unit, fill)
+            stroke.style = Paint.Style.STROKE
+            stroke.strokeWidth = 1f * unit
+            stroke.color = theme.border
+            canvas.drawRoundRect(panel, 3f * unit, 3f * unit, stroke)
 
-        val speed = state.speedKph
-        val speedText = if (speed != null) "%.0f".format(Locale.US, speed) else "--"
-        val speedX = panel.left + 10f * unit
-        val speedBaseline = panel.bottom - 26f * unit
-        text(canvas, speedText, speedX, speedBaseline, 42f * unit, theme.foreground, bold = true)
-        text(
-            canvas, "km/h", speedX + measure(speedText, 42f * unit, bold = true) + 6f * unit,
-            speedBaseline, 9f * unit, theme.dim,
-        )
-        val gps = when {
-            navState == NavState.ACTIVE -> "NAV"
-            navState == NavState.ROUTING -> "ROUTING"
-            navState == NavState.LOCATION_REQUIRED -> "NO FIX"
-            navState == NavState.ROUTE_ERROR -> "ROUTE ERROR"
-            !MapCameraStore.followGps -> "PAN"
-            MapCameraStore.orientation == MapCameraStore.Orientation.NORTH_UP -> "NORTH"
-            state.gpsActive -> "FOLLOW"
-            else -> "GPS WAIT"
+            val speed = state.speedKph
+            val speedText = if (speed != null) "%.0f".format(Locale.US, speed) else "--"
+            val speedX = panel.left + 10f * unit
+            val speedBaseline = panel.bottom - 26f * unit
+            text(canvas, speedText, speedX, speedBaseline, 42f * unit, theme.foreground, bold = true)
+            text(
+                canvas, "km/h", speedX + measure(speedText, 42f * unit, bold = true) + 6f * unit,
+                speedBaseline, 9f * unit, theme.dim,
+            )
+            val gps = when {
+                navState == NavState.ACTIVE -> "NAV"
+                navState == NavState.ROUTING -> "ROUTING"
+                navState == NavState.LOCATION_REQUIRED -> "NO FIX"
+                navState == NavState.ROUTE_ERROR -> "ROUTE ERROR"
+                !MapCameraStore.followGps -> "PAN"
+                MapCameraStore.orientation == MapCameraStore.Orientation.NORTH_UP -> "NORTH"
+                state.gpsActive -> "FOLLOW"
+                else -> "GPS WAIT"
+            }
+            text(
+                canvas, gps, panel.left + 12f * unit, panel.bottom - 9f * unit, 8f * unit,
+                when {
+                    navState == NavState.ROUTE_ERROR ||
+                        navState == NavState.LOCATION_REQUIRED -> theme.red
+                    state.gpsActive || navState == NavState.ACTIVE -> theme.green
+                    else -> theme.yellow
+                },
+            )
+            panel.right
+        } else {
+            content.left + 2f * unit
         }
-        text(
-            canvas, gps, panel.left + 12f * unit, panel.bottom - 9f * unit, 8f * unit,
-            when {
-                navState == NavState.ROUTE_ERROR ||
-                    navState == NavState.LOCATION_REQUIRED -> theme.red
-                state.gpsActive || navState == NavState.ACTIVE -> theme.green
-                else -> theme.yellow
-            },
-        )
 
         // Bottom-right Search Address & Start/Stop/Retry Navigation buttons
         val btnH = 34f * unit
@@ -2163,7 +2248,7 @@ class TileRenderer {
             btnTop + btnH,
         )
         val searchRight = navToggle.left - 8f * unit
-        val searchLeft = maxOf(panel.right + 8f * unit, searchRight - 180f * unit)
+        val searchLeft = maxOf(speedRightEdge + 8f * unit, searchRight - 180f * unit)
         val searchOpen = RectF(searchLeft, btnTop, searchRight, btnTop + btnH)
         val searchLabel = if (dest != null) "⌕ ${dest.name}" else "⌕ SEARCH ADDRESS"
         drawTextButton(canvas, searchOpen, searchLabel, theme, unit)
@@ -2180,6 +2265,18 @@ class TileRenderer {
                 NavState.LOCATION_REQUIRED -> theme.yellow
                 else -> theme.green
             },
+        )
+
+        val credit = "OpenFreeMap · OSM"
+        val creditSize = 8f * unit
+        text(
+            canvas,
+            credit,
+            content.left + 10f * unit,
+            (btnTop - 8f * unit).coerceAtLeast(content.top + 14f * unit),
+            creditSize,
+            withAlpha(theme.foreground, 200),
+            maxWidth = (searchLeft - content.left - 16f * unit).coerceAtLeast(48f * unit),
         )
 
         return DriveHit(
@@ -2237,7 +2334,7 @@ class TileRenderer {
 
         // Stage web app pills on the right side of the bar
         var rightX = content.right
-        if (CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.PHONE)) {
+        if (CarPlatformPolicy.allowsWebStage(policySurface())) {
             StageWebApp.entries.reversed().forEach { app ->
                 val label = app.title
                 val w = measure(label, 8f * unit, bold = true) + 16f * unit
@@ -2303,10 +2400,16 @@ class TileRenderer {
         val media = state.media
         if (media == null) {
             val title = if (state.mediaAccess) "NO ACTIVE AUDIO SESSION" else "MEDIA ACCESS NEEDED"
-            val detail = if (state.mediaAccess) {
-                "Tap YOUTUBE / CHATGPT / GROK above or start audio playback"
-            } else {
-                "Grant notification access in Setup, or tap YOUTUBE / CHATGPT / GROK above"
+            val allowsWeb = CarPlatformPolicy.allowsWebStage(policySurface())
+            val detail = when {
+                state.mediaAccess && allowsWeb ->
+                    "Tap YOUTUBE / CHATGPT / GROK above or start audio playback"
+                state.mediaAccess ->
+                    "Start audio playback on your phone"
+                allowsWeb ->
+                    "Grant notification access in Setup, or tap YOUTUBE / CHATGPT / GROK above"
+                else ->
+                    "Grant notification access on your phone to display active media"
             }
             text(
                 canvas, title, body.centerX() - measure(title, 15f * unit, bold = true) / 2f,
@@ -2974,13 +3077,124 @@ class TileRenderer {
         )
 
         if (homeSetupOpen) {
-            val railToggles = mutableListOf<Pair<RailItemId, RectF>>()
-            val mediaTargets = mutableListOf<Pair<String, RectF>>()
-
             val colGap = 12f * unit
             val colW = (content.width() - colGap) / 2f
             val leftCol = RectF(content.left, content.top + 6f * unit, content.left + colW, setupButton.top - 8f * unit)
             val rightCol = RectF(leftCol.right + colGap, leftCol.top, content.right, leftCol.bottom)
+
+            if (mode == Mode.CAR) {
+                text(
+                    canvas,
+                    "CAR DISPLAY & MAP OPTIONS (TAP TO CHANGE)",
+                    leftCol.left,
+                    leftCol.top + 10f * unit,
+                    8.5f * unit,
+                    theme.accent,
+                    bold = true,
+                    maxWidth = leftCol.width(),
+                )
+                val optTop = leftCol.top + 16f * unit
+                val optGap = 4f * unit
+                val optRowH = ((leftCol.bottom - optTop) / 3f).coerceIn(22f * unit, 30f * unit)
+
+                fun drawOptionRow(idx: Int, label: String, value: String): RectF {
+                    val top = optTop + idx * optRowH
+                    val row = RectF(leftCol.left, top, leftCol.right, top + optRowH - optGap)
+                    fill.style = Paint.Style.FILL
+                    fill.color = withAlpha(theme.surfaceAlt, 235)
+                    canvas.drawRoundRect(row, 2f * unit, 2f * unit, fill)
+                    stroke.style = Paint.Style.STROKE
+                    stroke.strokeWidth = 1f * unit
+                    stroke.color = theme.accent
+                    canvas.drawRoundRect(row, 2f * unit, 2f * unit, stroke)
+                    text(
+                        canvas,
+                        "$label: $value",
+                        row.left + 8f * unit,
+                        row.centerY() + 3f * unit,
+                        8.5f * unit,
+                        theme.foreground,
+                        bold = true,
+                        maxWidth = row.width() - 16f * unit,
+                    )
+                    return row
+                }
+
+                val orientLabel = if (MapCameraStore.orientation == MapCameraStore.Orientation.HEADING_UP) {
+                    "HEADING UP"
+                } else {
+                    "NORTH UP"
+                }
+                val bgLabel = if (BackgroundStore.enabled) "TOM ROADSTER" else "THEME ARTWORK"
+                val orientRect = drawOptionRow(0, "MAP ORIENTATION", orientLabel)
+                val notifScaleRect = drawOptionRow(1, "NOTIFICATION TEXT", DisplaySettings.label())
+                val bgModeRect = drawOptionRow(2, "WALLPAPER", bgLabel)
+
+                text(
+                    canvas,
+                    "SYSTEM & PERMISSION STATUS",
+                    rightCol.left,
+                    rightCol.top + 10f * unit,
+                    8.5f * unit,
+                    theme.accent,
+                    bold = true,
+                    maxWidth = rightCol.width(),
+                )
+                val statusItems = listOf(
+                    "GPS" to when {
+                        state.gpsActive -> "FIX LIVE"
+                        state.locationAccess -> "WAITING FOR FIX"
+                        else -> "PERMISSION NEEDED"
+                    },
+                    "MAP" to when {
+                        MapSnapshotStore.bitmap != null -> "SNAPSHOT READY"
+                        MapSnapshotStore.error != null -> "OFFLINE"
+                        else -> "LOADING"
+                    },
+                    "MEDIA" to (state.media?.let { "${it.source.uppercase(Locale.US)} LIVE" }
+                        ?: if (state.mediaAccess) "IDLE" else "ACCESS NEEDED"),
+                    "ALERTS" to if (state.notificationAccess) {
+                        "${state.notifications.size} ACTIVE"
+                    } else {
+                        "ACCESS NEEDED"
+                    },
+                )
+                val statusTop = rightCol.top + 16f * unit
+                val statusRowH = ((rightCol.bottom - statusTop) / statusItems.size)
+                    .coerceIn(18f * unit, 26f * unit)
+                statusItems.forEachIndexed { idx, (k, v) ->
+                    val top = statusTop + idx * statusRowH
+                    val row = RectF(rightCol.left, top, rightCol.right, top + statusRowH - 3f * unit)
+                    fill.style = Paint.Style.FILL
+                    fill.color = withAlpha(theme.background, 180)
+                    canvas.drawRoundRect(row, 2f * unit, 2f * unit, fill)
+                    stroke.style = Paint.Style.STROKE
+                    stroke.strokeWidth = 1f * unit
+                    stroke.color = theme.border
+                    canvas.drawRoundRect(row, 2f * unit, 2f * unit, stroke)
+                    text(
+                        canvas,
+                        "$k  ·  $v",
+                        row.left + 8f * unit,
+                        row.centerY() + 3f * unit,
+                        8f * unit,
+                        theme.dim,
+                        maxWidth = row.width() - 16f * unit,
+                    )
+                }
+
+                drawTextButton(canvas, setupButton, "DONE · BACK TO THEMES", theme, unit)
+                canvas.restore()
+                return HomeHit(
+                    setup = setupButton,
+                    mapOrientationToggle = orientRect,
+                    notifScaleCycle = notifScaleRect,
+                    bgModeToggle = bgModeRect,
+                )
+            }
+
+            val railToggles = mutableListOf<Pair<RailItemId, RectF>>()
+            val mediaTargets = mutableListOf<Pair<String, RectF>>()
 
             text(
                 canvas,
@@ -2992,7 +3206,7 @@ class TileRenderer {
                 bold = true,
                 maxWidth = leftCol.width(),
             )
-            val railItems = RailConfigStore.configurableItems()
+            val railItems = RailConfigStore.configurableItems(policySurface())
             val railTop = leftCol.top + 16f * unit
             val railGap = 3f * unit
             val railRowH = ((leftCol.bottom - railTop) / railItems.size.coerceAtLeast(1))
@@ -3105,7 +3319,12 @@ class TileRenderer {
             )
         }
 
-        drawTextButton(canvas, setupButton, "SETUP · RIGHT RAIL & APPS", theme, unit)
+        val setupLabel = if (mode == Mode.CAR) {
+            "SETUP · CAR & DISPLAY OPTIONS"
+        } else {
+            "SETUP · RIGHT RAIL & APPS"
+        }
+        drawTextButton(canvas, setupButton, setupLabel, theme, unit)
         canvas.restore()
         return HomeHit(setup = setupButton)
     }
