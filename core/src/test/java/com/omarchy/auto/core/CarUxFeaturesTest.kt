@@ -432,9 +432,15 @@ class CarUxFeaturesTest {
         DistractionLock.onCarSessionStarted()
         LiveDataStore.setLocationFix(0f, true, 43.65, -79.38, 0f, 5f, System.currentTimeMillis())
         assertTrue(DistractionLock.suppressesSharedDistractions())
+        assertFalse(CarPlatformPolicy.mapOnly(CarPlatformPolicy.Surface.ANDROID_AUTO))
+        assertTrue(CarPlatformPolicy.allowsCustomRail(CarPlatformPolicy.Surface.ANDROID_AUTO))
         assertFalse(CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.ANDROID_AUTO))
+        // The car shell keeps search and notification titles while the session
+        // is locked. The phone shell does not.
+        assertTrue(CarPlatformPolicy.allowsCustomKeyboard(CarPlatformPolicy.Surface.ANDROID_AUTO))
+        assertTrue(CarPlatformPolicy.allowsNotificationList(CarPlatformPolicy.Surface.ANDROID_AUTO))
         assertFalse(CarPlatformPolicy.allowsCustomKeyboard(CarPlatformPolicy.Surface.PHONE))
-        assertFalse(CarPlatformPolicy.allowsNotificationList(CarPlatformPolicy.Surface.ANDROID_AUTO))
+        assertFalse(CarPlatformPolicy.allowsNotificationList(CarPlatformPolicy.Surface.PHONE))
         DistractionLock.onHostUx(DistractionLock.HostUx.PARKED)
         assertFalse(DistractionLock.suppressesSharedDistractions())
         assertFalse(CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.ANDROID_AUTO))

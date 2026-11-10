@@ -268,6 +268,12 @@ class TileRenderer {
     var selected: TileId? = null
         private set
 
+    /** Surface of the most recent [draw]. Interaction checks follow it. */
+    private var drawSurface = CarPlatformPolicy.Surface.PHONE
+
+    /** One-shot so an already-active route opens the map without pinning it. */
+    private var revealedActiveNav = false
+
     @Volatile
     var webStageApp: StageWebApp? = null
         private set
@@ -340,8 +346,24 @@ class TileRenderer {
         keyboardMode = KeyboardMode.NONE
     }
 
+    /** NAVIGATE / geo: the drive stage is the map, even if another tile is open. */
+    fun revealDriveMap() {
+        revealedActiveNav = true
+        show(TileId.DRIVE)
+    }
+
+    /**
+     * Cold surface whose route is already active and whose shell has not
+     * chosen a tile yet. Later minimizing the map stays minimized.
+     */
+    fun showMapForNavigationIfNeeded(navState: NavState) {
+        if (revealedActiveNav || selected != null || navState == NavState.IDLE) return
+        revealedActiveNav = true
+        show(TileId.DRIVE)
+    }
+
     fun openWebApp(app: StageWebApp) {
-        if (!CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.PHONE)) return
+        if (!CarPlatformPolicy.allowsWebStage(drawSurface)) return
         if (selected == TileId.MEDIA && webStageApp == app) {
             selected = null
             webStageApp = null
@@ -361,6 +383,16 @@ class TileRenderer {
         keyboardMode = KeyboardMode.NONE
     }
 
+    /**
+     * Drops an embedded browser or video stage. Map search and the
+     * notification card stay open: those are part of the car shell.
+     */
+    fun suppressEmbeddedWeb() {
+        webStageApp = null
+        if (keyboardMode == KeyboardMode.WEB_INPUT) keyboardMode = KeyboardMode.NONE
+        StageWebController.setActive(false)
+    }
+
     fun selectRailItem(item: RailItemId) {
         val web = item.webApp
         if (web != null) {
@@ -377,7 +409,7 @@ class TileRenderer {
     }
 
     fun openKeyboard(mode: KeyboardMode, initialQuery: String = ""): Boolean {
-        if (!CarPlatformPolicy.allowsCustomKeyboard(CarPlatformPolicy.Surface.PHONE)) return false
+        if (!CarPlatformPolicy.allowsCustomKeyboard(drawSurface)) return false
         keyboardMode = mode
         keyboardQuery = initialQuery
         return true
@@ -478,7 +510,7 @@ class TileRenderer {
                 true
             }
             TileId.COMMS -> {
-                if (!CarPlatformPolicy.allowsCommsBrowsing(CarPlatformPolicy.Surface.PHONE)) return false
+                if (!CarPlatformPolicy.allowsCommsBrowsing(drawSurface)) return false
                 notifDragAccum += dy
                 var moved = false
                 while (kotlin.math.abs(notifDragAccum) >= 16f) {
@@ -517,11 +549,20 @@ class TileRenderer {
         themeIndex: Int,
         mode: Mode,
     ) {
-        if (mode == Mode.CAR) {
+        drawSurface = if (mode == Mode.CAR) {
+            CarPlatformPolicy.Surface.ANDROID_AUTO
+        } else {
+            CarPlatformPolicy.Surface.PHONE
+        }
+        // mapOnly is the full-bleed map switch. It is off: both surfaces use
+        // the five-tile shell. Phone metrics stay on the phone path below.
+        if (mode == Mode.CAR && CarPlatformPolicy.mapOnly(drawSurface)) {
             drawCarNavigationSurface(canvas, width, height, state, themeIndex)
             return
         }
-        if (DistractionLock.suppressesSharedDistractions()) {
+        if (drawSurface == CarPlatformPolicy.Surface.PHONE &&
+            DistractionLock.suppressesSharedDistractions()
+        ) {
             if (keyboardMode != KeyboardMode.NONE) closeKeyboard()
             if (overlayKey != null) closeNotification()
             if (webStageApp != null) closeWebApp()
@@ -542,8 +583,13 @@ class TileRenderer {
         }
         val wasMapActive = MapViewport.active
         MapViewport.active = selected == TileId.DRIVE
-        val webActive = selected == TileId.MEDIA && webStageApp != null
-        StageWebController.setActive(webActive, webStageApp)
+        val webAllowed = CarPlatformPolicy.allowsWebStage(drawSurface)
+        val webActive = webAllowed && selected == TileId.MEDIA && webStageApp != null
+        // A quiet car frame must not pause the phone launcher's WebView.
+        // StageWebController is process-global. The phone path still owns it.
+        if (drawSurface == CarPlatformPolicy.Surface.PHONE || webActive) {
+            StageWebController.setActive(webActive, webStageApp)
+        }
 
         val landscape = area.width() > area.height() * 1.25f
         val rawUnit = if (landscape) {
@@ -744,8 +790,7 @@ class TileRenderer {
             mode = mode,
             mapFillsCanvas = false,
             drawsCustomRail = true,
-            drawsManeuverBanner = selected == TileId.DRIVE &&
-                CarPlatformPolicy.allowsCanvasManeuverText(CarPlatformPolicy.Surface.PHONE),
+            drawsManeuverBanner = selected == TileId.DRIVE && canvasHasGuidance(),
             drawsKeyboard = keyboardHit != null,
             drawsNotificationList = selected == TileId.COMMS && stageHit.notifications.isNotEmpty(),
             drawsWebStage = webStageApp != null,
@@ -1158,14 +1203,14 @@ class TileRenderer {
             }
             TileId.MEDIA -> {
                 if (webStageApp != null &&
-                    !CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.PHONE)
+                    !CarPlatformPolicy.allowsWebStage(drawSurface)
                 ) {
                     closeWebApp()
                 }
                 mediaHit = drawMedia(canvas, content, theme, state, stageUnit)
             }
             TileId.COMMS -> {
-                if (!CarPlatformPolicy.allowsCommsBrowsing(CarPlatformPolicy.Surface.PHONE)) {
+                if (!CarPlatformPolicy.allowsCommsBrowsing(drawSurface)) {
                     drawLockedPlate(canvas, content, theme, stageUnit, "NOTIFICATIONS LOCKED WHILE DRIVING")
                 } else {
                     commsHit = drawComms(canvas, content, theme, state, stageUnit)
@@ -1608,6 +1653,12 @@ class TileRenderer {
 
     private data class MapLayerResult(val stale: Boolean, val zoom: Double)
 
+    private fun canvasHasGuidance(): Boolean =
+        NavigationController.currentInstruction() != null ||
+            NavigationController.statusMessage != null ||
+            NavigationController.destination != null
+
+    /** Full-bleed map used only while [CarPlatformPolicy.mapOnly] is on. */
     private fun drawCarNavigationSurface(
         canvas: Canvas,
         width: Int,
@@ -2237,7 +2288,7 @@ class TileRenderer {
 
         // Stage web app pills on the right side of the bar
         var rightX = content.right
-        if (CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.PHONE)) {
+        if (CarPlatformPolicy.allowsWebStage(drawSurface)) {
             StageWebApp.entries.reversed().forEach { app ->
                 val label = app.title
                 val w = measure(label, 8f * unit, bold = true) + 16f * unit

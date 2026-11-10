@@ -121,14 +121,22 @@ class CarSurfaceRenderer(
         renderer.setSafeArea(rect)
     }
 
+    fun showDriveMap() {
+        if (stopped) return
+        handler.post {
+            if (stopped) return@post
+            renderer.revealDriveMap()
+            draw()
+        }
+    }
+
     fun dismissDistractions() {
         if (stopped) return
         handler.post {
             if (stopped) return@post
-            renderer.closeKeyboard()
-            renderer.closeWebApp()
-            renderer.closeNotification()
-            StageWebController.setActive(false)
+            // Search and the notification card stay on the shell. Video and
+            // browser stages do not, including while the host reports driving.
+            renderer.suppressEmbeddedWeb()
             draw()
         }
     }
@@ -525,6 +533,7 @@ class CarSurfaceRenderer(
                 try {
                     canvas = surface.lockCanvas(null)
                     if (canvas != null) {
+                        renderer.showMapForNavigationIfNeeded(NavigationController.navState)
                         renderer.draw(
                             canvas = canvas,
                             width = canvas.width,

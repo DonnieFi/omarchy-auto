@@ -8,6 +8,7 @@ import android.net.Uri
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import androidx.car.app.ScreenManager
 import androidx.car.app.model.Action
 import androidx.car.app.model.ListTemplate
 import androidx.car.app.model.SearchTemplate
@@ -15,23 +16,28 @@ import androidx.car.app.navigation.model.LaneDirection
 import androidx.car.app.navigation.model.MessageInfo
 import androidx.car.app.navigation.model.NavigationTemplate
 import androidx.car.app.navigation.model.RoutingInfo
+import androidx.car.app.testing.ScreenController
 import androidx.car.app.testing.TestCarContext
 import androidx.car.app.testing.navigation.TestNavigationManager
+import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ApplicationProvider
 import com.omarchy.auto.core.CarPlatformPolicy
 import com.omarchy.auto.core.DistractionLock
 import com.omarchy.auto.core.LaunchTargetStore
 import com.omarchy.auto.core.LiveDataStore
 import com.omarchy.auto.core.MapCameraStore
+import com.omarchy.auto.core.MediaSnapshot
 import com.omarchy.auto.core.NavState
 import com.omarchy.auto.core.NavigateIntent
 import com.omarchy.auto.core.NavigationController
 import com.omarchy.auto.core.NotificationItem
 import com.omarchy.auto.core.ParsedRoute
+import com.omarchy.auto.core.RailConfigStore
 import com.omarchy.auto.core.RouteLane
 import com.omarchy.auto.core.RouteStep
 import com.omarchy.auto.core.SearchCandidate
 import com.omarchy.auto.core.SetupActivity
+import com.omarchy.auto.core.StageWebApp
 import com.omarchy.auto.core.TileId
 import com.omarchy.auto.core.TileRenderer
 import org.junit.After
@@ -222,29 +228,75 @@ class OmarchyScreenTest {
     }
 
     @Test
-    fun carSurfaceIsMapOnlyAndPhoneCommsLockWhileTheHostHasNotParked() {
+    fun carColdStartDrawsThePhoneShellAndKeepsItsTilesReachableWhileLocked() {
         DistractionLock.onCarSessionStarted()
-        val renderer = TileRenderer()
-        renderer.show(TileId.COMMS)
-        renderer.openKeyboard(TileRenderer.KeyboardMode.MAP_SEARCH, "king")
-        val canvas = Canvas(Bitmap.createBitmap(800, 480, Bitmap.Config.ARGB_8888))
-        renderer.draw(canvas, 800, 480, LiveDataStore.state, 0, TileRenderer.Mode.CAR)
-        val frame = renderer.lastFrame
-        assertNotNull(frame)
-        assertTrue(frame!!.mapFillsCanvas)
-        assertFalse(frame.drawsCustomRail)
-        assertFalse(frame.drawsManeuverBanner)
-        assertFalse(frame.drawsKeyboard)
-        assertFalse(frame.drawsNotificationList)
-        assertFalse(frame.drawsWebStage)
-        assertFalse(frame.drawsWallpaper)
-        assertEquals(TileId.DRIVE, renderer.selected)
-        assertTrue(renderer.scroll(0f, 0f, 12f, -4f, 43.65, -79.38))
-        assertFalse(MapCameraStore.followGps)
+        RailConfigStore.resetForTest()
+        LiveDataStore.setNotificationAccess(true)
+        LiveDataStore.setMediaAccess(true)
+        LiveDataStore.addNotification(
+            NotificationItem("k1", "Messages", "Alex", "Secret body", 1_000L),
+        )
+        LiveDataStore.setMedia(
+            MediaSnapshot(title = "Nightcall", artist = "Kavinsky", playing = true),
+        )
+        val canvas = Canvas(Bitmap.createBitmap(1280, 720, Bitmap.Config.ARGB_8888))
+        val car = TileRenderer()
+        car.draw(canvas, 1280, 720, LiveDataStore.state, 0, TileRenderer.Mode.CAR)
+        val idle = car.lastFrame
+        assertNotNull(idle)
+        assertFalse(idle!!.mapFillsCanvas)
+        assertTrue(idle.drawsCustomRail)
+        assertTrue(idle.drawsWallpaper)
+        assertFalse(idle.drawsWebStage)
+        assertFalse(idle.drawsKeyboard)
+        assertNull(car.selected)
+        val shellTiles = setOf(
+            TileRenderer.Target.TILE_DRIVE,
+            TileRenderer.Target.TILE_MEDIA,
+            TileRenderer.Target.TILE_COMMS,
+            TileRenderer.Target.TILE_HOME,
+        )
+        val carHits = scanHits(car, 1280, 720)
+        assertEquals(shellTiles, carHits.keys.intersect(shellTiles))
+        assertNull(carHits[TileRenderer.Target.THEME])
 
-        renderer.show(TileId.COMMS)
-        renderer.draw(canvas, 800, 480, LiveDataStore.state, 0, TileRenderer.Mode.PHONE)
-        assertFalse(renderer.lastFrame!!.drawsNotificationList)
+        val phone = TileRenderer()
+        phone.draw(canvas, 1280, 720, LiveDataStore.state, 0, TileRenderer.Mode.PHONE)
+        val phoneHits = scanHits(phone, 1280, 720)
+        assertEquals(shellTiles, phoneHits.keys.intersect(shellTiles))
+        assertTrue(phone.lastFrame!!.drawsCustomRail)
+        assertNotNull(phoneHits[TileRenderer.Target.THEME])
+
+        car.show(TileId.MEDIA)
+        car.draw(canvas, 1280, 720, LiveDataStore.state, 0, TileRenderer.Mode.CAR)
+        assertNotNull(scanHits(car, 1280, 720)[TileRenderer.Target.PLAY_PAUSE])
+        car.openWebApp(StageWebApp.YOUTUBE)
+        assertNull(car.webStageApp)
+        car.draw(canvas, 1280, 720, LiveDataStore.state, 0, TileRenderer.Mode.CAR)
+        assertFalse(car.lastFrame!!.drawsWebStage)
+
+        car.show(TileId.COMMS)
+        car.draw(canvas, 1280, 720, LiveDataStore.state, 0, TileRenderer.Mode.CAR)
+        assertTrue(car.lastFrame!!.drawsNotificationList)
+        assertNotNull(scanHits(car, 1280, 720)[TileRenderer.Target.NOTIFICATION])
+
+        car.show(TileId.HOME)
+        car.draw(canvas, 1280, 720, LiveDataStore.state, 0, TileRenderer.Mode.CAR)
+        val homeHits = scanHits(car, 1280, 720)
+        assertNotNull(homeHits[TileRenderer.Target.THEME_CHIP])
+        assertNotNull(homeHits[TileRenderer.Target.SETUP])
+
+        car.show(TileId.DRIVE)
+        car.draw(canvas, 1280, 720, LiveDataStore.state, 0, TileRenderer.Mode.CAR)
+        assertNotNull(scanHits(car, 1280, 720)[TileRenderer.Target.MAP_SEARCH_OPEN])
+        assertTrue(car.openKeyboard(TileRenderer.KeyboardMode.MAP_SEARCH, "king"))
+        car.draw(canvas, 1280, 720, LiveDataStore.state, 0, TileRenderer.Mode.CAR)
+        assertTrue(car.lastFrame!!.drawsKeyboard)
+
+        phone.show(TileId.COMMS)
+        phone.draw(canvas, 1280, 720, LiveDataStore.state, 0, TileRenderer.Mode.PHONE)
+        assertFalse(phone.lastFrame!!.drawsNotificationList)
+        assertFalse(phone.openKeyboard(TileRenderer.KeyboardMode.MAP_SEARCH, "king"))
         assertFalse(CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.ANDROID_AUTO))
     }
 
@@ -364,13 +416,14 @@ class OmarchyScreenTest {
             nowMs = now,
         )
         val renderer = TileRenderer()
+        renderer.show(TileId.DRIVE)
         val canvas = Canvas(Bitmap.createBitmap(1280, 720, Bitmap.Config.ARGB_8888))
         renderer.draw(canvas, 1280, 720, LiveDataStore.state, 0, TileRenderer.Mode.CAR)
         val frame = renderer.lastFrame
         assertNotNull(frame)
-        assertTrue(frame!!.mapFillsCanvas)
+        assertFalse(frame!!.mapFillsCanvas)
         assertTrue(frame.drawsManeuverBanner)
-        assertFalse(frame.drawsCustomRail)
+        assertTrue(frame.drawsCustomRail)
         assertFalse(frame.drawsKeyboard)
     }
 
@@ -413,6 +466,64 @@ class OmarchyScreenTest {
             Intent(Intent.ACTION_VIEW, Uri.parse("geo:43.6532,-79.3832")),
         )
         assertTrue(screen.onGetTemplate() is NavigationTemplate)
+    }
+
+    @Test
+    fun coldStartStaysOnTheShellUntilMenuOpensTheHub() {
+        val carContext = TestCarContext.createCarContext(ApplicationProvider.getApplicationContext())
+        val screen = OmarchyScreen(carContext)
+        ScreenController(screen).moveToState(Lifecycle.State.STARTED)
+        val template = screen.onGetTemplate()
+        assertTrue(template is NavigationTemplate)
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        val manager = carContext.getCarService(ScreenManager::class.java)
+        assertEquals(1, manager.stackSize)
+        assertTrue(manager.top is OmarchyScreen)
+
+        val menu = (template as NavigationTemplate).actionStrip!!.actions.first {
+            it.title?.toString() == "Menu"
+        }
+        menu.onClickDelegate!!.sendClick(object : androidx.car.app.OnDoneCallback {})
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertEquals(2, manager.stackSize)
+        assertTrue(manager.top is CarHomeScreen)
+    }
+
+    @Test
+    fun coordinateGeoIntentStaysOnTheMapAndOpensTheDriveStage() {
+        NavigationController.synchronousForTest = true
+        NavigationController.routeTransport = { oLat, oLon, dLat, dLon ->
+            ParsedRoute(
+                geometry = listOf(oLat to oLon, dLat to dLon),
+                steps = listOf(RouteStep("HEAD", "Queen", 400.0, 80.0, dLat, dLon, oLat, oLon)),
+                totalDistanceMeters = 400.0,
+                totalDurationSeconds = 80.0,
+            )
+        }
+        val now = System.currentTimeMillis()
+        LiveDataStore.setLocationFix(10f, true, 43.6532, -79.3832, 0f, 8f, now)
+        val carContext = TestCarContext.createCarContext(ApplicationProvider.getApplicationContext())
+        val screen = OmarchyScreen(carContext)
+        ScreenController(screen).moveToState(Lifecycle.State.STARTED)
+        screen.offerNavigateIntent(
+            Intent(Intent.ACTION_VIEW, Uri.parse("geo:43.66,-79.37")),
+        )
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        val manager = carContext.getCarService(ScreenManager::class.java)
+        assertTrue(manager.top is OmarchyScreen)
+        assertTrue(screen.onGetTemplate() is NavigationTemplate)
+        assertEquals(NavState.ACTIVE, NavigationController.navState)
+
+        val renderer = TileRenderer()
+        renderer.showMapForNavigationIfNeeded(NavigationController.navState)
+        assertEquals(TileId.DRIVE, renderer.selected)
+        renderer.toggle(TileId.DRIVE)
+        assertNull(renderer.selected)
+        renderer.showMapForNavigationIfNeeded(NavigationController.navState)
+        assertNull(renderer.selected)
+        renderer.show(TileId.MEDIA)
+        renderer.revealDriveMap()
+        assertEquals(TileId.DRIVE, renderer.selected)
     }
 
     @Test
@@ -583,6 +694,21 @@ class OmarchyScreenTest {
         assertTrue(sawSpace)
         assertTrue(sawKey)
         assertTrue(maxX - minX > (width * 0.65f).toInt())
+    }
+
+    private fun scanHits(
+        renderer: TileRenderer,
+        width: Int,
+        height: Int,
+    ): Map<TileRenderer.Target, TileRenderer.Hit> {
+        val found = linkedMapOf<TileRenderer.Target, TileRenderer.Hit>()
+        for (y in 0 until height step 4) {
+            for (x in 0 until width step 4) {
+                val hit = renderer.hitTest(x.toFloat() + 1f, y.toFloat() + 1f) ?: continue
+                found.putIfAbsent(hit.target, hit)
+            }
+        }
+        return found
     }
 
     private fun findButton(root: View, label: String): Button? {

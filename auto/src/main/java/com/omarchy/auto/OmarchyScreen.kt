@@ -62,8 +62,6 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
     private var templateStamp = ""
     private var tripStamp = ""
     private var alertKey = ""
-    private var hubOffered = false
-    private var hubOfferAttempts = 0
 
     private val autoDriveTick = object : Runnable {
         override fun run() {
@@ -328,60 +326,11 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
 
     override fun onGetTemplate(): Template {
         templateStamp = navStamp()
-        maybeOfferHubAfterTemplate()
         val builder = NavigationTemplate.Builder()
             .setActionStrip(actionStrip())
             .setMapActionStrip(mapActionStrip)
         applyHostGuidance(builder)
         return builder.build()
-    }
-
-    /**
-     * Cold idle start: the host gets the NavigationTemplate first (the
-     * template type a navigation app must be rooted in), then we push the
-     * Omarchy hub as a separate ListTemplate. Pushing after the first
-     * template, rather than during onStart, removes the start-up race and
-     * matches the Car App Library sample's SettingsScreen pattern. The map
-     * stays under the hub, so navigation continues while Media or Settings
-     * are open.
-     */
-    private fun maybeOfferHubAfterTemplate() {
-        if (hubOffered) return
-        // onGetTemplate can be called by tests and by the host before the
-        // screen is started; only push once the host owns a live screen.
-        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
-        if (pendingNav != null || NavigationController.navState != NavState.IDLE) {
-            hubOffered = true
-            return
-        }
-        if (screenManager.stackSize > 1) {
-            hubOffered = true
-            return
-        }
-        hubOfferAttempts++
-        mainHandler.post {
-            if (hubOffered) return@post
-            if (pendingNav != null || NavigationController.navState != NavState.IDLE) {
-                hubOffered = true
-                return@post
-            }
-            if (screenManager.stackSize > 1) {
-                hubOffered = true
-                return@post
-            }
-            try {
-                OaLog.i(TAG, "Opening the Omarchy hub over the map (attempt $hubOfferAttempts)")
-                screenManager.push(CarHomeScreen(carContext))
-                hubOffered = true
-            } catch (error: Exception) {
-                OaLog.w(TAG, "Could not open the Omarchy hub", error)
-                if (hubOfferAttempts < HUB_OFFER_MAX_ATTEMPTS) {
-                    hubOffered = false
-                } else {
-                    hubOffered = true
-                }
-            }
-        }
     }
 
     private fun onHostUx(ux: DistractionLock.HostUx) {
@@ -431,7 +380,6 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
     private fun applyPendingNavigation() {
         val request = pendingNav ?: return
         pendingNav = null
-        hubOffered = true
         if (request.hasCoordinates) {
             NavigationController.selectDestination(
                 SearchCandidate(
@@ -442,6 +390,7 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
                 ),
                 autoStartNav = true,
             )
+            surfaceRenderer?.showDriveMap()
             return
         }
         val query = request.query?.trim().orEmpty()
@@ -649,10 +598,9 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
                 .setOnClickListener { openSearch() }
                 .build(),
         )
-        // The hub replaces the old gear action. Settings now lives inside the
-        // hub so the four-action strip has room for navigation controls.
-        // Keep Menu persistent so the driver is never stranded on the map
-        // after the host auto-hides the action strip.
+        // Menu is the only entry to the host list hub. A cold start stays on
+        // the themed shell. Keep Menu persistent so the driver can still open
+        // that hub after the host auto-hides the action strip.
         val menuAction = Action.Builder()
             .setTitle("Menu")
             .setIcon(icon(R.drawable.ic_menu))
@@ -706,7 +654,6 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
 
     private fun openHome() {
         OaLog.i(TAG, "Menu action pressed")
-        hubOffered = true
         try {
             screenManager.push(CarHomeScreen(carContext))
         } catch (error: Exception) {
@@ -740,6 +687,5 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
 
     companion object {
         private const val TAG = "OmarchyScreen"
-        private const val HUB_OFFER_MAX_ATTEMPTS = 3
     }
 }
