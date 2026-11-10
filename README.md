@@ -361,7 +361,7 @@ prototype for future Linux work.
   surface drew the phone-style shell. This shell restoration and the Ferrostar
   routing alpha still need that car pass.
 - Unit tests on this tree: `./gradlew :core:testDebugUnitTest :auto:testDebugUnitTest`
-  (63 tests, 0 failures on 2026-11-10). Those tests do not drive a head unit.
+  (65 tests, 0 failures on 2026-11-10). Those tests do not drive a head unit.
 - Routing spike: `:navigation-spike:assembleDebug`, JVM tests, lint and native
   emulator tests pass. Live Stadia routing, audible speech, real GPS and the
   Android Auto head unit remain unverified.

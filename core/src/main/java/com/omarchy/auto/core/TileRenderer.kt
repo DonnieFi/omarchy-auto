@@ -569,7 +569,7 @@ class TileRenderer {
         val barScale = topBarScale(car)
 
         canvas.drawColor(theme.background)
-        drawWallpaper(canvas, width, height, area, theme, unit)
+        val drewWallpaper = drawWallpaper(canvas, width, height, area, theme, unit)
 
         val themeButton = RectF(
             area.right - margin - 62f * unit * barScale,
@@ -752,7 +752,7 @@ class TileRenderer {
             drawsKeyboard = keyboardHit != null,
             drawsNotificationList = selected == TileId.COMMS && stageHit.notifications.isNotEmpty(),
             drawsWebStage = webStageApp != null,
-            drawsWallpaper = true,
+            drawsWallpaper = drewWallpaper,
         )
     }
 
@@ -855,6 +855,7 @@ class TileRenderer {
     private fun tileNumber(id: TileId): String =
         if (!FeatureFlags.SHOW_VEHICLE_TILE && id == TileId.HOME) "04" else id.number
 
+    /** @return true only when a background bitmap was painted, not the palette fallback */
     private fun drawWallpaper(
         canvas: Canvas,
         width: Int,
@@ -862,8 +863,9 @@ class TileRenderer {
         area: RectF,
         theme: OmarchyTheme,
         unit: Float,
-    ) {
+    ): Boolean {
         val bitmap = background
+        val drewBitmap = bitmap != null
         if (bitmap != null) {
             val portrait = height > width * 1.25f
             val scale = maxOf(
@@ -971,6 +973,7 @@ class TileRenderer {
         fill.shader = vignetteShader
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fill)
         fill.shader = null
+        return drewBitmap
     }
 
     private fun drawRailItem(

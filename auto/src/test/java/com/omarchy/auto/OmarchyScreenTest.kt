@@ -238,7 +238,7 @@ class OmarchyScreenTest {
         assertEquals(TileRenderer.Mode.CAR, frame!!.mode)
         assertFalse(frame.mapFillsCanvas)
         assertTrue(frame.drawsCustomRail)
-        assertTrue(frame.drawsWallpaper)
+        assertFalse(frame.drawsWallpaper)
         assertFalse(frame.drawsKeyboard)
         assertFalse(frame.drawsNotificationList)
         assertFalse(frame.drawsWebStage)
