@@ -19,10 +19,10 @@ import com.omarchy.auto.core.NavigationController
 import com.omarchy.auto.core.diag.OaLog
 
 /**
- * The car's screen hub, pushed over [OmarchyScreen] after the first map
- * template (or from the Menu action). The map stays alive underneath, so
- * navigation and guidance continue while Media, Notifications or Settings are
- * open. The Map row pops back to the live map.
+ * The car's screen hub. It opens only from the Menu action, never on a cold
+ * start. The map stays alive underneath, so navigation and guidance continue
+ * while Media, Notifications or Settings are open. The Map row pops back to
+ * the live map.
  *
  * Labels avoid "Home": in a navigation app a house/Home reads as "navigate to
  * my home address". The map action / Menu is the hub's entry point.

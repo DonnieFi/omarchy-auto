@@ -1,31 +1,43 @@
 package com.omarchy.auto.core
 
 /**
- * What the Android Auto navigation surface is allowed to draw.
+ * What each surface may draw.
  *
- * Decision for omarchy-8wl.12, checked against the car app quality guidelines
- * (PC-1, NF-2, IU-1, SA-1, MF-5). The `auto` module declares only the
- * NAVIGATION category. A parked lock does not add video, browser, or messaging
- * categories, and it does not allow non-map text on the navigation surface.
+ * The phone launcher and the Android Auto map surface share the Omarchy
+ * shell (rail, stage, theme, wallpaper). The `auto` module still declares
+ * only the NAVIGATION category, so the in-stage browser and the custom
+ * keyboard stay off the car canvas. Search on that canvas opens the host
+ * search screen instead. Notification bodies stay
+ * behind [DistractionLock] until the host reports parked; while driving, the
+ * shell opens the host notification list (titles only).
  *
- * The phone launcher may keep the custom shell. While a car session is active,
- * [DistractionLock] still hides that shell's distracting paths until the host
- * reports parked.
+ * Car-app quality guidance for a navigation-only app prefers a map-only
+ * canvas. Drawing the shell here is a product choice, not an SDK hard block.
  */
 object CarPlatformPolicy {
     enum class Surface { ANDROID_AUTO, PHONE }
 
-    fun mapOnly(surface: Surface): Boolean = surface == Surface.ANDROID_AUTO
+    fun mapOnly(surface: Surface): Boolean = when (surface) {
+        Surface.ANDROID_AUTO, Surface.PHONE -> false
+    }
 
-    /** Turn instructions and ETA belong on NavigationTemplate, not the canvas. */
-    fun allowsCanvasManeuverText(surface: Surface): Boolean = surface == Surface.PHONE
+    /** The drive stage draws the same guidance card the phone shell draws. */
+    fun allowsCanvasManeuverText(surface: Surface): Boolean = when (surface) {
+        Surface.ANDROID_AUTO, Surface.PHONE -> true
+    }
 
-    fun allowsCustomRail(surface: Surface): Boolean = surface == Surface.PHONE
+    fun allowsCustomRail(surface: Surface): Boolean = when (surface) {
+        Surface.ANDROID_AUTO, Surface.PHONE -> true
+    }
 
-    fun allowsDecorativeWallpaper(surface: Surface): Boolean = surface == Surface.PHONE
+    fun allowsDecorativeWallpaper(surface: Surface): Boolean = when (surface) {
+        Surface.ANDROID_AUTO, Surface.PHONE -> true
+    }
 
-    /** Speed and the vehicle marker are drive-relevant map-safe-area content. */
-    fun allowsCompactSpeed(surface: Surface): Boolean = true
+    /** Speed and the vehicle marker are drive-relevant map content. */
+    fun allowsCompactSpeed(surface: Surface): Boolean = when (surface) {
+        Surface.ANDROID_AUTO, Surface.PHONE -> true
+    }
 
     fun allowsWebStage(surface: Surface): Boolean = when (surface) {
         Surface.ANDROID_AUTO -> false
@@ -33,11 +45,13 @@ object CarPlatformPolicy {
             FeatureFlags.ALLOW_CAR_WEB_STAGE && !DistractionLock.suppressesSharedDistractions()
     }
 
-    fun allowsCustomKeyboard(surface: Surface): Boolean =
-        surface == Surface.PHONE && !DistractionLock.suppressesSharedDistractions()
+    fun allowsCustomKeyboard(surface: Surface): Boolean = when (surface) {
+        Surface.ANDROID_AUTO -> false
+        Surface.PHONE -> !DistractionLock.suppressesSharedDistractions()
+    }
 
     fun allowsNotificationList(surface: Surface): Boolean =
-        surface == Surface.PHONE && !DistractionLock.suppressesSharedDistractions()
+        !DistractionLock.suppressesSharedDistractions()
 
     fun allowsCommsBrowsing(surface: Surface): Boolean = allowsNotificationList(surface)
 }
