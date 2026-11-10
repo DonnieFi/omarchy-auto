@@ -16,8 +16,8 @@ import com.omarchy.auto.core.MediaWatcher
 
 /**
  * Driving-safe media screen: now playing plus play/pause, next and previous.
- * Browsing, queue, video and web stages stay on the phone (or are parked-only
- * on the phone); none of them are drawn on the car.
+ * The shell's Media tile sends the same transport commands. Browsing, queue,
+ * video and web stages stay off the car canvas.
  */
 class CarMediaScreen(carContext: CarContext) : Screen(carContext) {
 

@@ -15,12 +15,12 @@
 
 **An Omarchy-styled car UI for Android Auto and Android phones.** The car
 display is the primary target: a Car App Library **NavigationTemplate** app.
-On Android Auto the surface is the map only — route line, vehicle marker,
-compact speed, and attribution. Turn text, lane arrows, and arrival time use
-the host routing card. Search, zoom, heading, and settings use the host action
-strips. The phone launcher keeps the right-side rail (`Drive / Media / Comms /
-Home`) and one large stage. The Vehicle tile is hidden until its data source
-is real.
+On Android Auto the navigation surface draws the same Omarchy shell as the
+phone launcher: themed wallpaper, title, footer, and the right-side rail
+(`Drive / Media / Comms / Home`) around one large stage. The Drive tile is
+the map. Turn text, lane arrows, and arrival time still use the host routing
+card. Search, zoom, heading, and the menu hub also stay on the host action
+strips. The Vehicle tile is hidden until its data source is real.
 
 ![Omarchy Auto rail-and-stage UI over Tom Ballard's Tokyo Studio artwork](docs/img/hero-tokyo-night.webp)
 
@@ -53,19 +53,19 @@ Built and checked on this machine:
   over USB using Play Internal App Sharing. That build drew the phone-style
   shell on the car surface. Current source is **0.1.16** (versionCode 17). It
   keeps the OpenFreeMap dark basemap, the unified `MEDIA TILE APP` selector,
-  and opt-in crash reporting / `SEND LOGS`, and it limits the Android Auto
-  surface to the map with a host-rendered hub for Search, Media,
-  Notifications, and Settings. Host templates carry the maneuver, lanes, and
-  ETA. That map-only guidance has unit tests and has not had a head-unit pass.
+  and opt-in crash reporting / `SEND LOGS`, and it draws that same shell on
+  the Android Auto surface again. Host templates still carry the maneuver,
+  lanes, and ETA. Menu opens the host hub; a cold idle start does not. This
+  shell has unit tests and has not had a new head-unit pass.
 - The Desktop Head Unit was attempted, but the emulator image's Android Auto
   app is a Play Store stub and the image has no Play Store.
 
 Live data is ordered as requested: clock + theme, now playing (MediaSession),
 notifications (NotificationListener), GPS speed, and battery level/charging. The
 Vehicle tile is hidden behind `FeatureFlags.SHOW_VEHICLE_TILE`; Torque is
-intentionally not wired up yet. The phone launcher still draws its own title
-and footer. Android Auto does not: the host supplies the routing card and the
-action strips, and the map canvas is full-bleed.
+intentionally not wired up yet. The phone launcher and the Android Auto
+surface both draw the title, footer, and rail. The host still supplies the
+routing card and the action strips.
 
 ## Build
 
@@ -232,24 +232,32 @@ native libraries, the tracked Tokyo Studio Tokyo Night background, the unified
 `MEDIA TILE APP` selector in Setup, and `SEND LOGS` / crash reporting.
 
 The car app declares only the Car App Library **NAVIGATION** category. It
-draws the map full-bleed into `NavigationTemplate` through
-`AppManager.setSurfaceCallback`. The canvas is the map, the route, the vehicle
-marker, compact speed, and the OpenFreeMap / OSM credit. Maneuver text, lane
-arrows, and the travel estimate are host `RoutingInfo` and `TravelEstimate`.
-Search is a host `SearchTemplate` opened from the Search action; the host
+draws into `NavigationTemplate` through `AppManager.setSurfaceCallback`. The
+canvas is the Omarchy shell: themed wallpaper, title, footer, and the rail
+(`Drive / Media / Comms / Home`). The Drive tile is the map, the route, the
+vehicle marker, speed, and the OpenFreeMap / OSM credit. Maneuver text, lane
+arrows, and the travel estimate are host `RoutingInfo` and `TravelEstimate`;
+the Drive tile also draws the same guidance card as the phone. Theme chips
+and the theme control change the palette on the canvas. Media previous,
+play/pause, and next run from the Media tile. Search is a host `SearchTemplate`
+opened from the shell's search button and from the Search action; the host
 keeps the keyboard parked-only while voice input and result rows still work
-while driving. **Menu** opens the Omarchy hub, a host `ListTemplate` with Map,
-Search, Media, Notifications, and Settings. Settings holds the theme picker,
-map orientation/recenter, phone setup, and About. The hub is pushed over the
-map, so the navigation session and trip updates stay alive while Media or
-Settings are open; **Map** pops back to the live map. A cold idle start shows
-the hub automatically after the first map template; a NAVIGATE/geo intent opens
-the map directly. The main strip is Search, Menu, and Heading while idle. End
+while driving. The shell does not draw the custom keyboard. While the host has
+not reported parked, the Comms tile opens the host notification list (titles,
+not bodies). Once parked, the in-shell list is shown. **Menu** opens the
+Omarchy hub, a host `ListTemplate` with Map, Search, Media, Notifications, and
+Settings. A cold idle start does not open that hub. Settings holds the theme
+picker, map orientation/recenter, phone setup, and About, and the shell's
+Home `OPEN SETTINGS` control opens the same screen. The hub is pushed over
+the map, so the navigation session and trip updates stay alive while Media or
+Settings are open; **Map** pops back to the live map. A NAVIGATE/geo intent
+lands on the map. The main strip is Search, Menu, and Heading while idle. End
 is added while a route is active. Reroute replaces Heading when the car is off
 the route. Retry replaces it on route/location errors. The map strip is
 icon-only: zoom in, zoom out, recenter, and pan.
-Video, browsers, the custom keyboard, the notification list, and the action
-rail are not drawn on that surface, including when the host reports parked.
+Video and the in-stage browser are not drawn on that surface, including when
+the host reports parked. Drawing this shell on a navigation-only template is
+outside the car-app quality guidance for map canvases.
 
 > **Sideloading caveat:** current Google documentation says the Android Auto
 > "Unknown sources" developer option applies to media, messaging, and parked
@@ -267,8 +275,8 @@ rail are not drawn on that surface, including when the host reports parked.
 core/                         shared Kotlin Android library
   Theme.kt                    10 Omarchy palettes + background ids
   Model.kt                    TileId, DashboardState, MediaSnapshot, NotificationItem
-  TileRenderer.kt             Canvas renderer; car draw returns into the map surface
-  CarPlatformPolicy.kt        what the AA surface may draw versus the phone shell
+  TileRenderer.kt             Canvas renderer; car and phone share the shell
+  CarPlatformPolicy.kt        shell on both surfaces; browser and keyboard stay off AA
   DistractionLock.kt          car-session lock until the host reports parked
   NavigationController.kt     OSRM route, lanes, off-route, held ETA
   NavigateIntent.kt           geo and google.navigation parsing
@@ -293,7 +301,7 @@ auto/                         Android Auto app (com.omarchy.auto)
   CarSettingsScreen           host settings ListTemplate (theme, map, phone setup, about)
   NavigationAlerts            guidance notification, separate from the foreground service
   AaosHostUx                  AAOS parked/driving reflection; absent on phones
-  CarSurfaceRenderer          Surface.lockCanvas -> TileRenderer map path
+  CarSurfaceRenderer          Surface.lockCanvas -> TileRenderer shell
 
 launcher/                     phone launcher (com.omarchy.auto.launcher)
   MainActivity                immersive launcher, app intents
@@ -307,20 +315,20 @@ prototype for future Linux work.
 
 | Area | Status |
 |---|---|
-| Five-tile layout, cut-out legends, mono type, 2px borders | Phone launcher. Not drawn on the Android Auto map |
+| Five-tile layout, cut-out legends, mono type, 2px borders | Phone launcher and the Android Auto shell |
 | Themes | 10 Omarchy palettes + matching backgrounds (Tokyo Night: Tom Ballard); phone switch verified |
 | Background | Custom image picker, bundled Tom background, or theme backgrounds; custom choice survives theme changes |
-| Bars | Phone title and footer. Android Auto uses the host routing card and action strips |
+| Bars | Phone and Android Auto title and footer. The host still draws the routing card and action strips |
 | Clock | Live; idle redraws align to the next minute, media progress stays 1 Hz |
 | Battery | Footer icon + percentage; charging accent; state-driven redraw |
 | Media | Live MediaSession metadata/art/progress + `MEDIA TILE APP` target selector in Setup for both packages |
 | Notifications | Live listener + existing-notification load; OTP/2FA and banking filter; optional package allow-list; bodies not logged |
 | GPS speed | Location/GPS speed; launcher got a fix at 0 km/h on the bench |
 | Vehicle | Hidden by `FeatureFlags.SHOW_VEHICLE_TILE` until OBD/Torque is real |
-| Right rail + large stage | Phone launcher, verified on emulator and phone |
+| Right rail + large stage | Phone launcher and the Android Auto shell. Phone verified on emulator and phone; the car shell has not had a new head-unit pass |
 | Rotation | Portrait/landscape reflow verified on the S24 FE |
-| Media play/pause/previous/next | Phone launcher via MediaTransport. Not on the Android Auto surface |
-| AA NavigationTemplate + SurfaceCallback | Map-only canvas in current source; 0.1.1 shell was seen on a Kia; this guidance has no head-unit pass |
+| Media play/pause/previous/next | Phone launcher and the Android Auto Media tile, both via MediaTransport |
+| AA NavigationTemplate + SurfaceCallback | Themed shell on the map surface. 0.1.1 shell was seen on a Kia; this restoration has no new head-unit pass |
 | AA host cards and strips | Routing card, travel estimate, search (host keyboard parked-only, voice while driving), in-car hub with media/notifications/settings, map zoom/recenter/pan; unit-tested |
 | Turn-by-turn | Public OSRM demo, roundabout exit, lane arrows when OSM has them, off-route message until Recalculate, ETA held across small changes |
 | Real map | OpenFreeMap dark style via MapLibre snapshots on the phone Drive stage and the AA map surface, plus a live location puck |
@@ -350,10 +358,10 @@ prototype for future Linux work.
 - Tile-to-YouTube-Music and Back-to-launcher verified.
 - GPS provider returned a fix; speed read zero while stationary.
 - Android Auto host: 0.1.1 verified on the owner's real Kia screen, when the
-  surface still drew the phone-style shell. The 0.1.12 map-only guidance and
-  the Ferrostar routing alpha still need that car pass.
+  surface drew the phone-style shell. This shell restoration and the Ferrostar
+  routing alpha still need that car pass.
 - Unit tests on this tree: `./gradlew :core:testDebugUnitTest :auto:testDebugUnitTest`
-  (48 tests, 0 failures on 2026-11-07). Those tests do not drive a head unit.
+  (65 tests, 0 failures on 2026-11-10). Those tests do not drive a head unit.
 - Routing spike: `:navigation-spike:assembleDebug`, JVM tests, lint and native
   emulator tests pass. Live Stadia routing, audible speech, real GPS and the
   Android Auto head unit remain unverified.
@@ -364,13 +372,17 @@ prototype for future Linux work.
 
 ## Limitations
 
-- The 0.1.12 map-only Android Auto surface and its OSRM guidance still need a
+- The restored Android Auto shell and its OSRM guidance still need a
   real-car acceptance pass. 0.1.1 was verified there with the older shell.
+  A navigation-only app that draws a custom shell can fail Play / Android Auto
+  quality review. That risk is accepted for this build.
 - Sideloaded Car App Library availability is subject to Google's host policy;
   use Play Internal App Sharing for the trusted install.
-- The Android Auto canvas does not draw the rail, maneuver banner, keyboard,
-  notification list, or web stage. Those stay on the phone, and the phone hides
-  the distracting ones until the host reports parked or the car session ends.
+- The Android Auto canvas draws the rail and the drive-stage guidance card.
+  It does not draw the custom keyboard or the web stage. Notification bodies
+  stay hidden until the host reports parked; the host list shows titles while
+  driving. The phone hides the same distracting paths until the host reports
+  parked or the car session ends.
 - Routing uses the public OSRM demo (`router.project-osrm.org`) and address
   search uses Photon, then Nominatim. A route sends the current fix and the
   destination to that demo. There is no toll exclusion and no posted speed
