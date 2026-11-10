@@ -1,7 +1,9 @@
 package com.omarchy.auto
 
 import android.content.Context
-import com.omarchy.auto.core.CarPlatformPolicy
+import com.omarchy.auto.core.AppBackground
+import com.omarchy.auto.core.BackgroundStore
+import com.omarchy.auto.core.DisplaySettings
 import com.omarchy.auto.core.LaunchTargetStore
 import com.omarchy.auto.core.MapCameraStore
 import com.omarchy.auto.core.MediaTransport
@@ -17,10 +19,9 @@ import com.omarchy.auto.core.TileId
 import com.omarchy.auto.core.TileRenderer
 
 /**
- * Turns a shell hit into a real action. Search, settings, and locked
- * notifications leave the canvas for a host template so they stay usable
- * while driving. Theme chips, media transport, and the parked notification
- * list run on the canvas.
+ * Turns a shell hit into a real action. Address search uses the host
+ * SearchTemplate screen; theme chips, media transport, Comms notifications,
+ * and car display/map settings run directly inside the Omarchy canvas shell.
  */
 interface CarShellHost {
     fun openSearch()
@@ -88,6 +89,26 @@ internal class CarShellDispatch(
                 StageWebApp.entries.firstOrNull { it.id == key }?.let { app ->
                     StageWebController.selectApp(app)
                 }
+            }
+
+            TileRenderer.Target.MAP_ORIENTATION_TOGGLE -> {
+                MapCameraStore.toggleOrientation()
+            }
+
+            TileRenderer.Target.NOTIF_SCALE_CYCLE -> {
+                DisplaySettings.init(appContext)
+                DisplaySettings.cycle()
+            }
+
+            TileRenderer.Target.BG_MODE_TOGGLE -> {
+                BackgroundStore.init(appContext)
+                if (BackgroundStore.enabled) {
+                    BackgroundStore.clear(appContext)
+                } else {
+                    BackgroundStore.useBundledTom(appContext)
+                }
+                AppBackground.invalidate()
+                refreshBackground()
             }
 
             TileRenderer.Target.MEDIA_SESSION_SELECT -> {
@@ -171,23 +192,16 @@ internal class CarShellDispatch(
             TileRenderer.Target.STAGE_OPEN -> {
                 val tile = renderer.selected ?: return false
                 if (tile == TileId.HOME) {
-                    host.openSettings()
-                } else {
-                    launchStage(tile)
+                    renderer.toggleHomeSetup()
+                    return true
                 }
+                launchStage(tile)
                 return false
             }
 
             TileRenderer.Target.TILE_DRIVE -> renderer.toggle(TileId.DRIVE)
             TileRenderer.Target.TILE_MEDIA -> renderer.toggle(TileId.MEDIA)
-            TileRenderer.Target.TILE_COMMS -> {
-                renderer.toggle(TileId.COMMS)
-                if (renderer.selected == TileId.COMMS &&
-                    !CarPlatformPolicy.allowsNotificationList(CarPlatformPolicy.Surface.ANDROID_AUTO)
-                ) {
-                    host.openNotifications()
-                }
-            }
+            TileRenderer.Target.TILE_COMMS -> renderer.toggle(TileId.COMMS)
             TileRenderer.Target.TILE_VEHICLE -> renderer.toggle(TileId.VEHICLE)
             TileRenderer.Target.TILE_HOME -> renderer.toggle(TileId.HOME)
         }

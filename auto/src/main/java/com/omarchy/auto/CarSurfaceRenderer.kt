@@ -13,6 +13,7 @@ import com.omarchy.auto.core.diag.OaLog
 import android.view.Surface
 import com.omarchy.auto.core.AppBackground
 import com.omarchy.auto.core.BackgroundStore
+import com.omarchy.auto.core.DisplaySettings
 import com.omarchy.auto.core.LaunchTargetStore
 import com.omarchy.auto.core.LiveDataStore
 import com.omarchy.auto.core.NavigationController
@@ -65,6 +66,7 @@ class CarSurfaceRenderer(
 
     init {
         BackgroundStore.init(appContext)
+        DisplaySettings.init(appContext)
         LaunchTargetStore.init(appContext)
         RailConfigStore.init(appContext)
         StageWebController.init(appContext)
@@ -122,6 +124,15 @@ class CarSurfaceRenderer(
         handler.post {
             if (stopped) return@post
             renderer.toggle(TileId.HOME)
+            draw()
+        }
+    }
+
+    fun showTile(tile: TileId) {
+        if (stopped) return
+        handler.post {
+            if (stopped) return@post
+            renderer.show(tile)
             draw()
         }
     }

@@ -84,20 +84,25 @@ object RailConfigStore {
         )
     }
 
-    fun isItemAllowed(item: RailItemId): Boolean {
-        if (item == RailItemId.VEHICLE && !FeatureFlags.SHOW_VEHICLE_TILE) return false
-        if (item.webApp != null && !FeatureFlags.ALLOW_CAR_WEB_STAGE) return false
-        return true
-    }
+    fun isItemAllowed(
+        item: RailItemId,
+        surface: CarPlatformPolicy.Surface = CarPlatformPolicy.Surface.PHONE,
+    ): Boolean = CarPlatformPolicy.allowsRailItem(surface, item)
 
-    fun allSelectable(): List<RailItemId> =
-        RailItemId.entries.filter(::isItemAllowed)
+    fun allSelectable(
+        surface: CarPlatformPolicy.Surface = CarPlatformPolicy.Surface.PHONE,
+    ): List<RailItemId> =
+        RailItemId.entries.filter { isItemAllowed(it, surface) }
 
-    fun configurableItems(): List<RailItemId> =
-        allSelectable()
+    fun configurableItems(
+        surface: CarPlatformPolicy.Surface = CarPlatformPolicy.Surface.PHONE,
+    ): List<RailItemId> =
+        allSelectable(surface)
 
-    fun enabledItems(): List<RailItemId> =
-        allSelectable().filter { it.key in enabledSet || it == RailItemId.HOME }
+    fun enabledItems(
+        surface: CarPlatformPolicy.Surface = CarPlatformPolicy.Surface.PHONE,
+    ): List<RailItemId> =
+        allSelectable(surface).filter { it.key in enabledSet || it == RailItemId.HOME }
 
     fun isEnabled(item: RailItemId): Boolean =
         isItemAllowed(item) && (item == RailItemId.HOME || item.key in enabledSet)

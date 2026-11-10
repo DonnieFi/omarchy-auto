@@ -101,8 +101,10 @@ class OmarchyScreenTest {
     }
 
     @Test
-    fun activeNavigationPublishesHostRoutingInfoInsteadOfCanvasText() {
-        val carContext = TestCarContext.createCarContext(ApplicationProvider.getApplicationContext())
+    fun activeNavigationKeepsGuidanceOnCanvasAndSyncsNavigationManagerWithoutHostOverlayCards() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val carContext = TestCarContext.createCarContext(context)
+        val testNavManager = carContext.getCarService(TestNavigationManager::class.java)
         val screen = OmarchyScreen(carContext)
         val now = System.currentTimeMillis()
         NavigationController.synchronousForTest = true
@@ -135,11 +137,15 @@ class OmarchyScreenTest {
             autoStartNav = true,
             nowMs = now,
         )
+        screen.syncNavigationManager()
         val template = screen.onGetTemplate() as NavigationTemplate
-        assertTrue(template.navigationInfo is RoutingInfo)
-        assertNotNull(template.destinationTravelEstimate)
-        val routing = template.navigationInfo as RoutingInfo
-        val step = routing.currentStep
+        // Host overlay cards are omitted so the Omarchy [01 · DRIVE] stage is the single guidance UI.
+        assertNull(template.navigationInfo)
+        assertNull(template.destinationTravelEstimate)
+        // NavigationManager still receives the active trip and lane metadata for cluster/host state.
+        assertTrue(screen.hostNavStarted)
+        assertTrue(testNavManager.tripsSent.isNotEmpty())
+        val step = testNavManager.tripsSent.last().steps.firstOrNull()
         assertNotNull(step)
         assertEquals("TURN LEFT", step!!.cue.toString())
         assertEquals("Yonge St", step.road.toString())
@@ -228,6 +234,7 @@ class OmarchyScreenTest {
     @Test
     fun carSurfaceDrawsTheShellAndPhoneCommsStayLockedWhileTheHostHasNotParked() {
         DistractionLock.onCarSessionStarted()
+        LiveDataStore.setLocationFix(25f, true, 43.65, -79.38, 0f, 5f, 1_000L)
         val renderer = TileRenderer()
         renderer.show(TileId.COMMS)
         assertFalse(renderer.openKeyboard(TileRenderer.KeyboardMode.MAP_SEARCH, "king"))
@@ -392,7 +399,7 @@ class OmarchyScreenTest {
     }
 
     @Test
-    fun coldIdleStartStaysOnTheMapTemplateUntilMenuOpensTheHub() {
+    fun coldIdleStartAndMenuActionStayOnOmarchyScreenWithoutPushingGrayHub() {
         val screen = startedScreen()
         assertEquals(NavState.IDLE, NavigationController.navState)
         assertTrue(screen.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
@@ -408,8 +415,8 @@ class OmarchyScreenTest {
         }
         menu.onClickDelegate!!.sendClick(object : androidx.car.app.OnDoneCallback {})
         Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
-        assertEquals(2, manager.stackSize)
-        assertTrue(manager.top is CarHomeScreen)
+        assertEquals(1, manager.stackSize)
+        assertTrue(manager.top is OmarchyScreen)
     }
 
     @Test
@@ -545,7 +552,7 @@ class OmarchyScreenTest {
     }
 
     @Test
-    fun offRoutePublishesAMessageAndReplacesHeadingWithReroute() {
+    fun offRouteReplacesHeadingWithRerouteWhileKeepingGuidanceOnCanvas() {
         val carContext = TestCarContext.createCarContext(ApplicationProvider.getApplicationContext())
         val screen = OmarchyScreen(carContext)
         val now = System.currentTimeMillis()
@@ -567,7 +574,7 @@ class OmarchyScreenTest {
         NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 1_000L)
         NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 2_000L)
         val template = screen.onGetTemplate() as NavigationTemplate
-        assertTrue(template.navigationInfo is MessageInfo)
+        assertNull(template.navigationInfo)
         val titles = template.actionStrip!!.actions.map { it.title?.toString() }
         assertEquals(listOf("Search", "Menu", "Reroute", "End"), titles)
         assertEquals(4, template.mapActionStrip!!.actions.size)

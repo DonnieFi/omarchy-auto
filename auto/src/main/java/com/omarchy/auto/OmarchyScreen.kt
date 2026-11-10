@@ -35,6 +35,7 @@ import androidx.core.graphics.drawable.IconCompat
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
+import com.omarchy.auto.core.CarPlatformPolicy
 import com.omarchy.auto.core.DashboardState
 import com.omarchy.auto.core.DistractionLock
 import com.omarchy.auto.core.LiveDataStore
@@ -416,6 +417,10 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
     }
 
     private fun applyHostGuidance(builder: NavigationTemplate.Builder) {
+        if (!CarPlatformPolicy.allowsHostRoutingCards(CarPlatformPolicy.Surface.ANDROID_AUTO)) {
+            syncGuidanceAlert()
+            return
+        }
         val state = NavigationController.navState
         when (state) {
             NavState.ROUTING -> {
@@ -670,29 +675,17 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
 
     private fun openHome() {
         OaLog.i(TAG, "Menu action pressed")
-        try {
-            screenManager.push(CarHomeScreen(carContext))
-        } catch (error: Exception) {
-            OaLog.w(TAG, "Could not open the Omarchy hub", error)
-        }
+        surfaceRenderer?.openSettings()
     }
 
     private fun openNotifications() {
         OaLog.i(TAG, "Notifications action pressed")
-        try {
-            screenManager.push(CarCommsScreen(carContext))
-        } catch (error: Exception) {
-            OaLog.w(TAG, "Could not open notifications", error)
-        }
+        surfaceRenderer?.showTile(com.omarchy.auto.core.TileId.COMMS)
     }
 
     private fun openSettings() {
         OaLog.i(TAG, "Settings action pressed")
-        try {
-            screenManager.push(CarSettingsScreen(carContext))
-        } catch (error: Exception) {
-            OaLog.w(TAG, "Could not open settings", error)
-        }
+        surfaceRenderer?.openSettings()
     }
 
     private fun icon(resId: Int): CarIcon =

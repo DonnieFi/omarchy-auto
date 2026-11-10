@@ -8,13 +8,17 @@ import android.graphics.Color
 import androidx.test.core.app.ApplicationProvider
 import com.omarchy.auto.core.AppBackground
 import com.omarchy.auto.core.BackgroundStore
+import com.omarchy.auto.core.CarPlatformPolicy
+import com.omarchy.auto.core.DisplaySettings
 import com.omarchy.auto.core.DistractionLock
 import com.omarchy.auto.core.LiveDataStore
+import com.omarchy.auto.core.MapCameraStore
 import com.omarchy.auto.core.MediaSnapshot
 import com.omarchy.auto.core.MediaTransport
 import com.omarchy.auto.core.NotificationItem
 import com.omarchy.auto.core.OmarchyTheme
 import com.omarchy.auto.core.RailConfigStore
+import com.omarchy.auto.core.RailItemId
 import com.omarchy.auto.core.ThemeStore
 import com.omarchy.auto.core.Themes
 import com.omarchy.auto.core.TileId
@@ -26,6 +30,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -93,22 +98,50 @@ class CarShellTest {
     }
 
     @Test
-    fun shellActionsReachThemeMediaSearchNotificationsAndSettings() {
+    fun shellActionsStayOnCanvasExceptAddressSearchAndCarRailStaysFourTiles() {
         val host = RecordingHost()
         val renderer = TileRenderer()
         val dispatch = dispatcher(renderer, host)
 
+        // Enabling web stage items on phone must not leak them into the 4-tile CAR rail.
+        RailConfigStore.setEnabledForTest(RailItemId.YOUTUBE, true)
+        RailConfigStore.setEnabledForTest(RailItemId.CHATGPT, true)
+        RailConfigStore.setEnabledForTest(RailItemId.GROK, true)
+        assertEquals(
+            listOf(RailItemId.DRIVE, RailItemId.MEDIA, RailItemId.COMMS, RailItemId.HOME),
+            RailConfigStore.enabledItems(CarPlatformPolicy.Surface.ANDROID_AUTO),
+        )
+
         renderer.show(TileId.HOME)
         draw(renderer, TileRenderer.Mode.CAR)
+        assertNull(firstHit(renderer, TileRenderer.Target.RAIL_SCROLL_UP))
+        assertNull(firstHit(renderer, TileRenderer.Target.RAIL_SCROLL_DOWN))
+        assertNull(firstHit(renderer, TileRenderer.Target.STAGE_OPEN))
+
         val chip = firstHit(renderer, TileRenderer.Target.THEME_CHIP) { it.index == 2 }
         assertNotNull(chip)
         assertTrue(dispatch.apply(chip!!))
         assertEquals(2, ThemeStore.index)
 
-        val settings = firstHit(renderer, TileRenderer.Target.STAGE_OPEN)
-        assertNotNull(settings)
-        dispatch.apply(settings!!)
-        assertEquals(1, host.settings)
+        // Opening Setup inside HOME on CAR shows in-stage car options instead of pushing host settings.
+        val setup = firstHit(renderer, TileRenderer.Target.SETUP)
+        assertNotNull(setup)
+        assertTrue(dispatch.apply(setup!!))
+        assertTrue(renderer.homeSetupOpen)
+        assertEquals(0, host.settings)
+        draw(renderer, TileRenderer.Mode.CAR)
+        val orientHit = firstHit(renderer, TileRenderer.Target.MAP_ORIENTATION_TOGGLE)
+        val scaleHit = firstHit(renderer, TileRenderer.Target.NOTIF_SCALE_CYCLE)
+        val bgHit = firstHit(renderer, TileRenderer.Target.BG_MODE_TOGGLE)
+        assertNotNull(orientHit)
+        assertNotNull(scaleHit)
+        assertNotNull(bgHit)
+        val beforeOrient = MapCameraStore.orientation
+        assertTrue(dispatch.apply(orientHit!!))
+        assertTrue(MapCameraStore.orientation != beforeOrient)
+        val beforeScale = DisplaySettings.label()
+        assertTrue(dispatch.apply(scaleHit!!))
+        assertTrue(DisplaySettings.label() != beforeScale)
 
         LiveDataStore.setMediaAccess(true)
         LiveDataStore.setMedia(
@@ -121,6 +154,7 @@ class CarShellTest {
         )
         renderer.show(TileId.MEDIA)
         draw(renderer, TileRenderer.Mode.CAR)
+        assertNull(firstHit(renderer, TileRenderer.Target.STAGE_OPEN))
         assertNotNull(firstHit(renderer, TileRenderer.Target.PLAY_PAUSE))
         assertNotNull(firstHit(renderer, TileRenderer.Target.PREV_TRACK))
         assertNotNull(firstHit(renderer, TileRenderer.Target.NEXT_TRACK))
@@ -132,6 +166,7 @@ class CarShellTest {
         DistractionLock.onCarSessionStarted()
         renderer.show(TileId.DRIVE)
         draw(renderer, TileRenderer.Mode.CAR)
+        assertNull(firstHit(renderer, TileRenderer.Target.STAGE_OPEN))
         val search = firstHit(renderer, TileRenderer.Target.MAP_SEARCH_OPEN)
         assertNotNull(search)
         assertTrue(dispatch.apply(search!!))
@@ -139,20 +174,17 @@ class CarShellTest {
         assertEquals(TileRenderer.KeyboardMode.NONE, renderer.keyboardMode)
         assertFalse(renderer.openKeyboard(TileRenderer.KeyboardMode.MAP_SEARCH, "king"))
 
-        val comms = firstHit(renderer, TileRenderer.Target.TILE_COMMS)
-        assertNotNull(comms)
-        assertTrue(dispatch.apply(comms!!))
-        assertEquals(TileId.COMMS, renderer.selected)
-        assertEquals(1, host.notifications)
-        draw(renderer, TileRenderer.Mode.CAR)
-        assertFalse(renderer.lastFrame!!.drawsNotificationList)
-
-        DistractionLock.onHostUx(DistractionLock.HostUx.PARKED)
+        // Stationary (0 km/h) on Android Auto projection allows in-stage Comms without pushing host list.
         LiveDataStore.setNotificationAccess(true)
         LiveDataStore.addNotification(
             NotificationItem("k1", "Messages", "Alex", "On my way", 1_000L),
         )
-        renderer.show(TileId.COMMS)
+        LiveDataStore.setLocationFix(0f, true, 43.65, -79.38, 0f, 5f, 1_000L)
+        val comms = firstHit(renderer, TileRenderer.Target.TILE_COMMS)
+        assertNotNull(comms)
+        assertTrue(dispatch.apply(comms!!))
+        assertEquals(TileId.COMMS, renderer.selected)
+        assertEquals(0, host.notifications)
         draw(renderer, TileRenderer.Mode.CAR)
         assertTrue(renderer.lastFrame!!.drawsNotificationList)
         val row = firstHit(renderer, TileRenderer.Target.NOTIFICATION)
@@ -160,7 +192,13 @@ class CarShellTest {
         assertTrue(dispatch.apply(row!!))
         draw(renderer, TileRenderer.Mode.CAR)
         assertNotNull(firstHit(renderer, TileRenderer.Target.NOTIF_CLOSE))
-        assertEquals(1, host.notifications)
+
+        // Moving (> 2 km/h) locks Comms in-stage and closes the open notification overlay.
+        LiveDataStore.setLocationFix(25f, true, 43.65, -79.38, 0f, 5f, 2_000L)
+        draw(renderer, TileRenderer.Mode.CAR)
+        assertFalse(renderer.lastFrame!!.drawsNotificationList)
+        assertNull(firstHit(renderer, TileRenderer.Target.NOTIF_CLOSE))
+        assertEquals(0, host.notifications)
     }
 
     @Test

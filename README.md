@@ -16,11 +16,14 @@
 **An Omarchy-styled car UI for Android Auto and Android phones.** The car
 display is the primary target: a Car App Library **NavigationTemplate** app.
 On Android Auto the navigation surface draws the same Omarchy shell as the
-phone launcher: themed wallpaper, title, footer, and the right-side rail
+phone launcher: themed wallpaper, title, footer, and the 4-tile right-side rail
 (`Drive / Media / Comms / Home`) around one large stage. The Drive tile is
-the map. Turn text, lane arrows, and arrival time still use the host routing
-card. Search, zoom, heading, and the menu hub also stay on the host action
-strips. The Vehicle tile is hidden until its data source is real.
+the map and draws turn-by-turn guidance and ETA directly inside the Omarchy
+stage (while `NavigationManager` and `NavigationAlerts` sync trip metadata to
+the host). Address search opens the host `SearchTemplate` popup (`Search` on the
+action strip or `⌕ SEARCH ADDRESS` on the Drive stage); all other workflows
+(`Drive`, `Media`, `Comms`, and `Home` themes & car setup) stay inside the
+Omarchy canvas. The Vehicle tile is hidden until its data source is real.
 
 ![Omarchy Auto rail-and-stage UI over Tom Ballard's Tokyo Studio artwork](docs/img/hero-tokyo-night.webp)
 
@@ -51,12 +54,11 @@ Built and checked on this machine:
   configured in Setup (`MEDIA TILE APP`).
 - Android Auto 0.1.1 was verified on the owner's real Kia Android Auto screen
   over USB using Play Internal App Sharing. That build drew the phone-style
-  shell on the car surface. Current source is **0.1.16** (versionCode 17). It
+  shell on the car surface. Current source is **0.1.18** (versionCode 19). It
   keeps the OpenFreeMap dark basemap, the unified `MEDIA TILE APP` selector,
-  and opt-in crash reporting / `SEND LOGS`, and it draws that same shell on
-  the Android Auto surface again. Host templates still carry the maneuver,
-  lanes, and ETA. Menu opens the host hub; a cold idle start does not. This
-  shell has unit tests and has not had a new head-unit pass.
+  and opt-in crash reporting / `SEND LOGS`, and it draws the refined Omarchy
+  canvas shell on the Android Auto surface without duplicate host routing cards
+  or gray host list takeovers.
 - The Desktop Head Unit was attempted, but the emulator image's Android Auto
   app is a Play Store stub and the image has no Play Store.
 
@@ -219,7 +221,7 @@ Without it the UI says so instead of inventing data.
 
 ### Android Auto — test install
 
-Current test build: **0.1.16** (versionCode 17). Build the signed AAB with:
+Current test build: **0.1.18** (versionCode 19). Build the signed AAB with:
 
 ```sh
 ./gradlew :auto:bundleRelease
@@ -233,31 +235,24 @@ native libraries, the tracked Tokyo Studio Tokyo Night background, the unified
 
 The car app declares only the Car App Library **NAVIGATION** category. It
 draws into `NavigationTemplate` through `AppManager.setSurfaceCallback`. The
-canvas is the Omarchy shell: themed wallpaper, title, footer, and the rail
-(`Drive / Media / Comms / Home`). The Drive tile is the map, the route, the
-vehicle marker, speed, and the OpenFreeMap / OSM credit. Maneuver text, lane
-arrows, and the travel estimate are host `RoutingInfo` and `TravelEstimate`;
-the Drive tile also draws the same guidance card as the phone. Theme chips
-and the theme control change the palette on the canvas. Media previous,
-play/pause, and next run from the Media tile. Search is a host `SearchTemplate`
-opened from the shell's search button and from the Search action; the host
-keeps the keyboard parked-only while voice input and result rows still work
-while driving. The shell does not draw the custom keyboard. While the host has
-not reported parked, the Comms tile opens the host notification list (titles,
-not bodies). Once parked, the in-shell list is shown. **Menu** opens the
-Omarchy hub, a host `ListTemplate` with Map, Search, Media, Notifications, and
-Settings. A cold idle start does not open that hub. Settings holds the theme
-picker, map orientation/recenter, phone setup, and About, and the shell's
-Home `OPEN SETTINGS` control opens the same screen. The hub is pushed over
-the map, so the navigation session and trip updates stay alive while Media or
-Settings are open; **Map** pops back to the live map. A NAVIGATE/geo intent
-lands on the map. The main strip is Search, Menu, and Heading while idle. End
-is added while a route is active. Reroute replaces Heading when the car is off
-the route. Retry replaces it on route/location errors. The map strip is
-icon-only: zoom in, zoom out, recenter, and pan.
-Video and the in-stage browser are not drawn on that surface, including when
-the host reports parked. Drawing this shell on a navigation-only template is
-outside the car-app quality guidance for map canvases.
+canvas is the Omarchy shell: themed wallpaper, title, footer, and the 4-tile
+right rail (`Drive / Media / Comms / Home`). The Drive tile fills the stage
+frame edge-to-edge with the map, route, vehicle marker, turn-by-turn guidance
+card, zoom/recenter controls, and OpenFreeMap / OSM credit, while live speed is
+displayed in the footer. Theme chips and the top-bar `THEME` button change the
+palette on the canvas, and `SETUP · CAR & DISPLAY OPTIONS` inside the Home
+stage toggles map orientation, notification text size, and wallpaper mode.
+Media previous, play/pause, and next run from the Media tile. Search is a host
+`SearchTemplate` opened from the Drive stage's search button and from the
+action-strip `Search` button; the host keeps the keyboard parked-only while
+voice input and result rows still work while driving. The Comms tile displays
+notifications in-stage when stationary/parked and locks while moving. **Menu**
+on the action strip toggles the Home stage on the canvas rather than pushing a
+stock host list screen. A NAVIGATE/geo intent lands on the Drive map. The main
+strip is Search, Menu, and Heading while idle; End is added while a route is
+active, Reroute replaces Heading when off-route, and Retry replaces it on
+route/location errors. The map strip is icon-only: zoom in, zoom out, recenter,
+and pan. Video and the in-stage browser are not drawn on the car surface.
 
 > **Sideloading caveat:** current Google documentation says the Android Auto
 > "Unknown sources" developer option applies to media, messaging, and parked

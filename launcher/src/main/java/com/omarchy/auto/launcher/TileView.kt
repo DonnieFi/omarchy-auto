@@ -12,6 +12,7 @@ import android.view.ViewConfiguration
 import com.omarchy.auto.core.AppBackground
 import com.omarchy.auto.core.BackgroundStore
 import com.omarchy.auto.core.DashboardState
+import com.omarchy.auto.core.DisplaySettings
 import com.omarchy.auto.core.LaunchTargetStore
 import com.omarchy.auto.core.LiveDataStore
 import com.omarchy.auto.core.MapCameraStore
@@ -244,6 +245,29 @@ class TileView @JvmOverloads constructor(
                 StageWebApp.entries.firstOrNull { it.id == key }?.let { app ->
                     StageWebController.selectApp(app)
                 }
+                invalidate()
+            }
+
+            TileRenderer.Target.MAP_ORIENTATION_TOGGLE -> {
+                MapCameraStore.toggleOrientation()
+                invalidate()
+            }
+
+            TileRenderer.Target.NOTIF_SCALE_CYCLE -> {
+                DisplaySettings.init(context)
+                DisplaySettings.cycle()
+                invalidate()
+            }
+
+            TileRenderer.Target.BG_MODE_TOGGLE -> {
+                BackgroundStore.init(context)
+                if (BackgroundStore.enabled) {
+                    BackgroundStore.clear(context)
+                } else {
+                    BackgroundStore.useBundledTom(context)
+                }
+                AppBackground.invalidate()
+                refreshBackground()
                 invalidate()
             }
 
