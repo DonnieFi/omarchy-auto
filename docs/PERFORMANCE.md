@@ -17,14 +17,22 @@ for a 30-minute real-car drive measurement.
 - **Battery:** one sticky `ACTION_BATTERY_CHANGED` read at start, then only
   broadcast changes. The footer draws an icon, percentage, and charging tint.
 - **Map:** snapshots while the map viewport is active. Follow mode requests at
-  most one snapshot per 1 s after 8 m or 12°. Panning uses the 2.5 s interval
-  with the same 8 m / 12° gate. The "updating map" badge follows that 8 m move
-  or a zoom change of about 0.45. Age alone, while stopped, does not mark the
-  bitmap stale.
+  most one snapshot per 1.5 s after 10 m or 12°. Panning uses the 2.5 s interval
+  with the same gate. The "updating map" badge follows that move or a zoom
+  change of about 0.45. Age alone, while stopped, does not mark the bitmap
+  stale. MapLibre snapshotting is the largest CPU cost on the head unit, so this
+  cadence is the main throttle.
+- **Wallpaper:** the scaled background, scrim, and vignette are composed once
+  into a screen-sized frame and blitted 1:1 until the bitmap, size, or theme
+  changes. Previously every GPS tick ran a 1600x900 source through a scale
+  matrix.
 - **Android Auto surface:** the canvas is the themed shell. The Drive tile
-  draws the map, route, marker, speed, and attribution. The host routing card
-  still carries maneuver text and ETA. A GPS fix repaints the drive stage,
-  and the shell also redraws media, notifications, and the rail.
+  draws the map, route, marker, moving-only speed box, and attribution. The
+  host routing card is omitted; guidance stays on the canvas. Redraw requests
+  are coalesced into one 16 ms frame, and the surface uses a hardware canvas
+  when the host supports it, falling back to software once. There is no host
+  map action strip, so zoom/pan controls are never drawn on top of the rail or
+  another stage.
 - **Backgrounds:** decoded off the draw thread with latest-request-wins; a
   background change triggers one redraw.
 

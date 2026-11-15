@@ -53,11 +53,12 @@ object CarPlatformPolicy {
     }
 
     /**
-     * On the car surface, the bottom footer already displays live speed, so
-     * the large stage speed box is omitted to keep the Drive map unobstructed.
+     * The phone keeps the large speed box at all times. On the car canvas it
+     * appears bottom-left only while the vehicle is actually moving, so it is
+     * glanceable without becoming another permanent overlay button.
      */
-    fun allowsCompactSpeed(surface: Surface): Boolean = when (surface) {
-        Surface.ANDROID_AUTO -> false
+    fun allowsCompactSpeed(surface: Surface, speedKph: Float?): Boolean = when (surface) {
+        Surface.ANDROID_AUTO -> speedKph != null && speedKph > MOVING_SPEED_KPH
         Surface.PHONE -> true
     }
 

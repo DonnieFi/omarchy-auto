@@ -8,7 +8,6 @@ import android.net.Uri
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
-import androidx.car.app.model.Action
 import androidx.car.app.model.ListTemplate
 import androidx.car.app.model.SearchTemplate
 import androidx.car.app.navigation.model.LaneDirection
@@ -71,7 +70,7 @@ class OmarchyScreenTest {
     }
 
     @Test
-    fun onGetTemplate_buildsNavigationTemplateWithActionStripAndPanMapActionStrip() {
+    fun onGetTemplate_buildsNavigationTemplateWithMainActionStripAndNoDuplicateMapStrip() {
         val carContext = TestCarContext.createCarContext(ApplicationProvider.getApplicationContext())
         val template = OmarchyScreen(carContext).onGetTemplate() as NavigationTemplate
         assertNotNull(template.actionStrip)
@@ -91,13 +90,25 @@ class OmarchyScreenTest {
         }
         assertNotNull(menuAction.onClickDelegate)
         assertFalse(menuAction.onClickDelegate!!.isParkedOnly)
-        val mapStrip = template.mapActionStrip
-        assertNotNull(mapStrip)
-        assertTrue(mapStrip!!.actions.any { it.type == Action.TYPE_PAN })
-        assertEquals(4, mapStrip.actions.size)
-        mapStrip.actions.filter { it.type != Action.TYPE_PAN }.forEach { assertNull(it.title) }
+        // Zoom, recenter and pan live on the Drive canvas. The host map strip
+        // was a duplicate that covered the rail and stayed on every stage.
+        assertNull(template.mapActionStrip)
         assertTrue(DistractionLock.carSessionActive)
         assertTrue(DistractionLock.suppressesSharedDistractions())
+    }
+
+    @Test
+    fun actionStripHidesDriveOnlyActionsWhenTheCanvasIsNotOnTheMap() {
+        val carContext = TestCarContext.createCarContext(ApplicationProvider.getApplicationContext())
+        val screen = OmarchyScreen(carContext)
+        assertEquals(
+            listOf("Search", "Menu"),
+            screen.actionStripForTest(mapVisible = false).actions.map { it.title?.toString() },
+        )
+        assertEquals(
+            listOf("Search", "Menu", "Heading"),
+            screen.actionStripForTest(mapVisible = true).actions.map { it.title?.toString() },
+        )
     }
 
     @Test
@@ -577,7 +588,7 @@ class OmarchyScreenTest {
         assertNull(template.navigationInfo)
         val titles = template.actionStrip!!.actions.map { it.title?.toString() }
         assertEquals(listOf("Search", "Menu", "Reroute", "End"), titles)
-        assertEquals(4, template.mapActionStrip!!.actions.size)
+        assertNull(template.mapActionStrip)
     }
 
     @Test

@@ -62,6 +62,9 @@ class TileRenderer {
         MAP_RECENTER,
         MAP_SEARCH_OPEN,
         MAP_NAV_TOGGLE,
+        MAP_STEP_PREV,
+        MAP_STEP_NEXT,
+        MAP_OFF_ROUTE_DISMISS,
         MAP_CANDIDATE_SELECT,
         RAIL_CONFIG_TOGGLE,
         MEDIA_TARGET_SELECT,
@@ -93,6 +96,8 @@ class TileRenderer {
         val drawsNotificationList: Boolean,
         val drawsWebStage: Boolean,
         val drawsWallpaper: Boolean,
+        val drawsMovingSpeed: Boolean = false,
+        val drawsStepButtons: Boolean = false,
     )
 
     @Volatile
@@ -149,6 +154,9 @@ class TileRenderer {
         val mapRecenter: RectF?,
         val mapSearchOpen: RectF?,
         val mapNavToggle: RectF?,
+        val mapStepPrev: RectF? = null,
+        val mapStepNext: RectF? = null,
+        val mapOffRouteDismiss: RectF? = null,
         val railScrollUp: RectF?,
         val railScrollDown: RectF?,
         val railItems: List<Pair<RailItemId, RectF>>,
@@ -187,6 +195,9 @@ class TileRenderer {
         val mapRecenter: RectF? = null,
         val mapSearchOpen: RectF? = null,
         val mapNavToggle: RectF? = null,
+        val mapStepPrev: RectF? = null,
+        val mapStepNext: RectF? = null,
+        val mapOffRouteDismiss: RectF? = null,
     )
 
     private data class DriveHit(
@@ -195,6 +206,9 @@ class TileRenderer {
         val recenter: RectF? = null,
         val searchOpen: RectF? = null,
         val navToggle: RectF? = null,
+        val stepPrev: RectF? = null,
+        val stepNext: RectF? = null,
+        val offRouteDismiss: RectF? = null,
     )
 
     private data class CommsHit(
@@ -269,6 +283,9 @@ class TileRenderer {
     private var fallbackShaderKey: Long = 0L
     private var vignetteShader: Shader? = null
     private var vignetteShaderKey: Long = 0L
+    private var wallpaperFrame: Bitmap? = null
+    private var wallpaperFrameKey = ""
+    private var wallpaperSource: Bitmap? = null
     private val wallpaperMatrix = Matrix()
     private val wallpaperPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
     private val clockFormat = SimpleDateFormat("HH:mm", Locale.US)
@@ -336,6 +353,11 @@ class TileRenderer {
     }
 
     fun setBackground(bitmap: Bitmap?) {
+        if (background !== bitmap) {
+            wallpaperFrameKey = ""
+            wallpaperFrame = null
+            wallpaperSource = null
+        }
         background = bitmap
     }
 
@@ -762,6 +784,9 @@ class TileRenderer {
             mapRecenter = stageHit.mapRecenter?.let { RectF(it) },
             mapSearchOpen = stageHit.mapSearchOpen?.let { RectF(it) },
             mapNavToggle = stageHit.mapNavToggle?.let { RectF(it) },
+            mapStepPrev = stageHit.mapStepPrev?.let { RectF(it) },
+            mapStepNext = stageHit.mapStepNext?.let { RectF(it) },
+            mapOffRouteDismiss = stageHit.mapOffRouteDismiss?.let { RectF(it) },
             railScrollUp = railScrollUpRect?.let { RectF(it) },
             railScrollDown = railScrollDownRect?.let { RectF(it) },
             railItems = railRects.map { it.first to RectF(it.second) },
@@ -778,6 +803,9 @@ class TileRenderer {
             drawsNotificationList = selected == TileId.COMMS && stageHit.notifications.isNotEmpty(),
             drawsWebStage = webStageApp != null,
             drawsWallpaper = drewWallpaper,
+            drawsMovingSpeed = selected == TileId.DRIVE &&
+                CarPlatformPolicy.allowsCompactSpeed(policySurface(), state.speedKph),
+            drawsStepButtons = stageHit.mapStepPrev != null || stageHit.mapStepNext != null,
         )
     }
 
@@ -861,6 +889,11 @@ class TileRenderer {
         layout.mapRecenter?.takeIf { it.contains(x, y) }?.let { return Hit(Target.MAP_RECENTER) }
         layout.mapSearchOpen?.takeIf { it.contains(x, y) }?.let { return Hit(Target.MAP_SEARCH_OPEN) }
         layout.mapNavToggle?.takeIf { it.contains(x, y) }?.let { return Hit(Target.MAP_NAV_TOGGLE) }
+        layout.mapStepPrev?.takeIf { it.contains(x, y) }?.let { return Hit(Target.MAP_STEP_PREV) }
+        layout.mapStepNext?.takeIf { it.contains(x, y) }?.let { return Hit(Target.MAP_STEP_NEXT) }
+        layout.mapOffRouteDismiss?.takeIf { it.contains(x, y) }?.let {
+            return Hit(Target.MAP_OFF_ROUTE_DISMISS)
+        }
         layout.notifRefresh?.takeIf { it.contains(x, y) }?.let { return Hit(Target.NOTIF_REFRESH) }
         layout.notifClear?.takeIf { it.contains(x, y) }?.let { return Hit(Target.NOTIF_CLEAR) }
         layout.notifScrollUp?.takeIf { it.contains(x, y) }?.let { return Hit(Target.NOTIF_SCROLL_UP) }
@@ -901,23 +934,50 @@ class TileRenderer {
         val bitmap = background
         val drewBitmap = bitmap != null
         if (bitmap != null) {
-            val portrait = height > width * 1.25f
-            val scale = maxOf(
-                width.toFloat() / bitmap.width,
-                height.toFloat() / bitmap.height,
-            )
-            val dx = (width - bitmap.width * scale) / 2f
-            val dy = (height - bitmap.height * scale) / 2f
-            wallpaperMatrix.reset()
-            wallpaperMatrix.setScale(scale, scale)
-            val shift = if (portrait) -width * 0.08f else 0f
-            wallpaperMatrix.postTranslate(dx + shift, dy)
-            wallpaperPaint.alpha = 255
-            canvas.drawBitmap(bitmap, wallpaperMatrix, wallpaperPaint)
+            // Scale and composite the wallpaper once per bitmap/size/theme.
+            // Redrawing a 1600x900 source through a scale matrix on every GPS
+            // tick was the biggest CPU cost on the car head unit.
+            val key = "${System.identityHashCode(bitmap)}:$width:$height:${theme.id}:${theme.scrimAlpha}"
+            var frame = wallpaperFrame
+            if (frame == null || wallpaperFrameKey != key ||
+                wallpaperSource !== bitmap ||
+                frame.width != width || frame.height != height
+            ) {
+                val previous = frame
+                frame = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                val frameCanvas = Canvas(frame)
+                val portrait = height > width * 1.25f
+                val scale = maxOf(
+                    width.toFloat() / bitmap.width,
+                    height.toFloat() / bitmap.height,
+                )
+                val dx = (width - bitmap.width * scale) / 2f
+                val dy = (height - bitmap.height * scale) / 2f
+                wallpaperMatrix.reset()
+                wallpaperMatrix.setScale(scale, scale)
+                val shift = if (portrait) -width * 0.08f else 0f
+                wallpaperMatrix.postTranslate(dx + shift, dy)
+                wallpaperPaint.alpha = 255
+                frameCanvas.drawBitmap(bitmap, wallpaperMatrix, wallpaperPaint)
 
-            fill.style = Paint.Style.FILL
-            fill.color = withAlpha(theme.background, theme.scrimAlpha)
-            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fill)
+                fill.style = Paint.Style.FILL
+                fill.shader = null
+                fill.color = withAlpha(theme.background, theme.scrimAlpha)
+                frameCanvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fill)
+                drawVignette(frameCanvas, width, height, theme)
+                wallpaperFrame = frame
+                wallpaperFrameKey = key
+                wallpaperSource = bitmap
+                if (previous != null && previous !== frame) {
+                    try {
+                        previous.recycle()
+                    } catch (_: Exception) {
+                        // A stale frame is harmless; let the collector take it.
+                    }
+                }
+            }
+            wallpaperPaint.alpha = 255
+            canvas.drawBitmap(frame, 0f, 0f, wallpaperPaint)
         } else {
             val key = (width.toLong() shl 32) xor height.toLong() xor theme.id.hashCode().toLong()
             if (fallbackShader == null || fallbackShaderKey != key) {
@@ -989,6 +1049,11 @@ class TileRenderer {
             }
         }
 
+        drawVignette(canvas, width, height, theme)
+        return drewBitmap
+    }
+
+    private fun drawVignette(canvas: Canvas, width: Int, height: Int, theme: OmarchyTheme) {
         val vignetteKey = height.toLong() xor theme.id.hashCode().toLong()
         if (vignetteShader == null || vignetteShaderKey != vignetteKey) {
             vignetteShader = LinearGradient(
@@ -1007,7 +1072,6 @@ class TileRenderer {
         fill.shader = vignetteShader
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fill)
         fill.shader = null
-        return drewBitmap
     }
 
     private fun drawRailItem(
@@ -1303,6 +1367,9 @@ class TileRenderer {
             mapRecenter = driveHit.recenter,
             mapSearchOpen = driveHit.searchOpen,
             mapNavToggle = driveHit.navToggle,
+            mapStepPrev = driveHit.stepPrev,
+            mapStepNext = driveHit.stepNext,
+            mapOffRouteDismiss = driveHit.offRouteDismiss,
             railToggles = homeHit.railToggles,
             mediaTargets = homeHit.mediaTargets,
             mapOrientationToggle = homeHit.mapOrientationToggle,
@@ -1881,7 +1948,7 @@ class TileRenderer {
         state: DashboardState,
         unit: Float,
         alignBottom: Boolean,
-    ) {
+    ): RectF {
         val panelH = 76f * unit
         val panelW = 190f * unit
         val top = if (alignBottom) overlay.bottom - panelH else overlay.top
@@ -1911,6 +1978,7 @@ class TileRenderer {
             else -> "NO FIX"
         }
         text(canvas, label, panel.left + 10f * unit, panel.bottom - 8f * unit, 11f * unit, theme.accent, bold = true)
+        return panel
     }
 
     private fun drawMapLayer(
@@ -2056,8 +2124,11 @@ class TileRenderer {
         val navStatus = NavigationController.statusMessage
         val navError: String? = null
         val navState = NavigationController.navState
+        val offRoute = NavigationController.offRoute
         val topInset = if (renderMode == Mode.CAR) 22f * unit else 8f * unit
-        var guidanceBottom = content.top + topInset
+        var stepPrev: RectF? = null
+        var stepNext: RectF? = null
+        var offRouteDismiss: RectF? = null
         if (dest != null || navInstruction != null || navStatus != null || navError != null) {
             val bannerWidth = minOf(content.width() * 0.46f, 300f * unit).coerceAtLeast(180f * unit)
             val banner = RectF(
@@ -2066,46 +2137,54 @@ class TileRenderer {
                 content.left + 10f * unit + bannerWidth,
                 content.top + topInset + 70f * unit,
             )
-            guidanceBottom = banner.bottom
+            val showStepButtons = navState == NavState.ACTIVE && NavigationController.steps.size > 1
+            val stepSize = 38f * unit
+            val stepGap = 6f * unit
+            val controlsWidth = if (showStepButtons) stepSize * 2f + stepGap + 10f * unit else 0f
             fill.style = Paint.Style.FILL
             fill.color = withAlpha(theme.background, 225)
             canvas.drawRoundRect(banner, 3f * unit, 3f * unit, fill)
             stroke.style = Paint.Style.STROKE
             stroke.strokeWidth = 1.5f * unit
-            stroke.color = when (navState) {
-                NavState.ACTIVE -> theme.green
-                NavState.ROUTE_ERROR,
-                NavState.LOCATION_REQUIRED -> theme.red
+            stroke.color = when {
+                offRoute -> theme.yellow
+                navState == NavState.ACTIVE -> theme.green
+                navState == NavState.ROUTE_ERROR ||
+                    navState == NavState.LOCATION_REQUIRED -> theme.red
                 else -> theme.accent
             }
             canvas.drawRoundRect(banner, 3f * unit, 3f * unit, stroke)
 
-            val primary = navInstruction ?: navStatus ?: dest?.name.orEmpty()
+            val primary = when {
+                offRoute -> "OFF THE ROUTE"
+                else -> navInstruction ?: navStatus ?: dest?.name.orEmpty()
+            }
             text(
                 canvas,
                 primary,
                 banner.left + 10f * unit,
                 banner.top + 22f * unit,
                 11f * unit,
-                when (navState) {
-                    NavState.ROUTE_ERROR,
-                    NavState.LOCATION_REQUIRED -> theme.yellow
+                when {
+                    offRoute -> theme.yellow
+                    navState == NavState.ROUTE_ERROR ||
+                        navState == NavState.LOCATION_REQUIRED -> theme.yellow
                     else -> theme.foreground
                 },
                 bold = true,
-                maxWidth = banner.width() - 20f * unit,
+                maxWidth = banner.width() - 20f * unit - controlsWidth,
             )
-            val subline = if (navState == NavState.ACTIVE &&
-                NavigationController.remainingDistanceMeters > 0.0
-            ) {
-                val dist = NavigationController.formatDistance(NavigationController.remainingDistanceMeters)
-                val eta = NavigationController.formatDuration(
-                    NavigationController.displayedRemainingDurationSeconds(),
-                )
-                val targetName = dest?.name ?: ""
-                "$dist  ·  ETA $eta  ·  $targetName"
-            } else {
-                navError ?: navStatus ?: dest?.displayName.orEmpty()
+            val subline = when {
+                offRoute -> "Tap to dismiss · rerouting automatically"
+                navState == NavState.ACTIVE && NavigationController.remainingDistanceMeters > 0.0 -> {
+                    val dist = NavigationController.formatDistance(NavigationController.remainingDistanceMeters)
+                    val eta = NavigationController.formatDuration(
+                        NavigationController.displayedRemainingDurationSeconds(),
+                    )
+                    val targetName = dest?.name ?: ""
+                    "$dist  ·  ETA $eta  ·  $targetName"
+                }
+                else -> navError ?: navStatus ?: dest?.displayName.orEmpty()
             }
             text(
                 canvas,
@@ -2113,14 +2192,39 @@ class TileRenderer {
                 banner.left + 10f * unit,
                 banner.bottom - 10f * unit,
                 8.5f * unit,
-                when (navState) {
-                    NavState.ACTIVE -> theme.green
-                    NavState.ROUTE_ERROR,
-                    NavState.LOCATION_REQUIRED -> theme.red
+                when {
+                    offRoute -> theme.yellow
+                    navState == NavState.ACTIVE -> theme.green
+                    navState == NavState.ROUTE_ERROR ||
+                        navState == NavState.LOCATION_REQUIRED -> theme.red
                     else -> theme.dim
                 },
-                maxWidth = banner.width() - 20f * unit,
+                maxWidth = banner.width() - 20f * unit - controlsWidth,
             )
+            if (showStepButtons) {
+                val top = banner.centerY() - stepSize / 2f
+                val nextRight = banner.right - 8f * unit
+                val nextRect = RectF(nextRight - stepSize, top, nextRight, top + stepSize)
+                val prevRect = RectF(
+                    nextRect.left - stepGap - stepSize,
+                    top,
+                    nextRect.left - stepGap,
+                    top + stepSize,
+                )
+                if (NavigationController.canSkipStepBack) {
+                    stepPrev = prevRect
+                    drawTextButton(canvas, prevRect, "‹", theme, unit, color = theme.foreground)
+                } else {
+                    drawTextButton(canvas, prevRect, "‹", theme, unit, color = theme.dim)
+                }
+                if (NavigationController.canSkipStepForward) {
+                    stepNext = nextRect
+                    drawTextButton(canvas, nextRect, "›", theme, unit, color = theme.accent)
+                } else {
+                    drawTextButton(canvas, nextRect, "›", theme, unit, color = theme.dim)
+                }
+            }
+            if (offRoute) offRouteDismiss = RectF(banner)
         } else if (stale) {
             val label = "UPDATING MAP…"
             val size = 9f * unit
@@ -2179,65 +2283,37 @@ class TileRenderer {
             theme.dim,
         )
 
-        // Compact speed under the left guidance card on phone; omitted on CAR
-        // where the footer already displays live speed.
-        val showSpeedBox = CarPlatformPolicy.allowsCompactSpeed(policySurface())
-        val speedRightEdge = if (showSpeedBox) {
-            val panel = RectF(
-                content.left + 10f * unit,
-                guidanceBottom + 8f * unit,
-                content.left + 200f * unit,
-                guidanceBottom + 84f * unit,
+        // Live speed sits bottom-left while the vehicle is moving. The footer
+        // still carries the compact readout; this box is the larger, glanceable
+        // copy drivers asked for, and it stays out of the way when stopped.
+        val showSpeedBox = CarPlatformPolicy.allowsCompactSpeed(policySurface(), state.speedKph)
+        val speedPanel = if (showSpeedBox) {
+            drawCompactSpeed(
+                canvas = canvas,
+                overlay = RectF(
+                    content.left + 10f * unit,
+                    content.top,
+                    content.right - 10f * unit,
+                    content.bottom - 10f * unit,
+                ),
+                theme = theme,
+                state = state,
+                unit = unit,
+                alignBottom = true,
             )
-            fill.style = Paint.Style.FILL
-            fill.color = withAlpha(theme.background, 220)
-            canvas.drawRoundRect(panel, 3f * unit, 3f * unit, fill)
-            stroke.style = Paint.Style.STROKE
-            stroke.strokeWidth = 1f * unit
-            stroke.color = theme.border
-            canvas.drawRoundRect(panel, 3f * unit, 3f * unit, stroke)
-
-            val speed = state.speedKph
-            val speedText = if (speed != null) "%.0f".format(Locale.US, speed) else "--"
-            val speedX = panel.left + 10f * unit
-            val speedBaseline = panel.bottom - 26f * unit
-            text(canvas, speedText, speedX, speedBaseline, 42f * unit, theme.foreground, bold = true)
-            text(
-                canvas, "km/h", speedX + measure(speedText, 42f * unit, bold = true) + 6f * unit,
-                speedBaseline, 9f * unit, theme.dim,
-            )
-            val gps = when {
-                navState == NavState.ACTIVE -> "NAV"
-                navState == NavState.ROUTING -> "ROUTING"
-                navState == NavState.LOCATION_REQUIRED -> "NO FIX"
-                navState == NavState.ROUTE_ERROR -> "ROUTE ERROR"
-                !MapCameraStore.followGps -> "PAN"
-                MapCameraStore.orientation == MapCameraStore.Orientation.NORTH_UP -> "NORTH"
-                state.gpsActive -> "FOLLOW"
-                else -> "GPS WAIT"
-            }
-            text(
-                canvas, gps, panel.left + 12f * unit, panel.bottom - 9f * unit, 8f * unit,
-                when {
-                    navState == NavState.ROUTE_ERROR ||
-                        navState == NavState.LOCATION_REQUIRED -> theme.red
-                    state.gpsActive || navState == NavState.ACTIVE -> theme.green
-                    else -> theme.yellow
-                },
-            )
-            panel.right
         } else {
-            content.left + 2f * unit
+            null
         }
+        val speedRightEdge = speedPanel?.right ?: (content.left + 2f * unit)
 
         // Bottom-right Search Address & Start/Stop/Retry Navigation buttons
         val btnH = 34f * unit
         val btnTop = content.bottom - 10f * unit - btnH
-        val navLabel = when (navState) {
-            NavState.ACTIVE,
-            NavState.ROUTING -> "STOP NAV"
-            NavState.ROUTE_ERROR,
-            NavState.LOCATION_REQUIRED -> "RETRY NAV"
+        val navLabel = when {
+            offRoute -> "REROUTE"
+            navState == NavState.ACTIVE || navState == NavState.ROUTING -> "STOP NAV"
+            navState == NavState.ROUTE_ERROR ||
+                navState == NavState.LOCATION_REQUIRED -> "RETRY NAV"
             else -> "START NAV"
         }
         val navW = maxOf(96f * unit, measure(navLabel, 9f * unit, bold = true) + 22f * unit)
@@ -2258,11 +2334,11 @@ class TileRenderer {
             navLabel,
             theme,
             unit,
-            color = when (navState) {
-                NavState.ACTIVE,
-                NavState.ROUTING -> theme.red
-                NavState.ROUTE_ERROR,
-                NavState.LOCATION_REQUIRED -> theme.yellow
+            color = when {
+                offRoute -> theme.yellow
+                navState == NavState.ACTIVE || navState == NavState.ROUTING -> theme.red
+                navState == NavState.ROUTE_ERROR ||
+                    navState == NavState.LOCATION_REQUIRED -> theme.yellow
                 else -> theme.green
             },
         )
@@ -2273,7 +2349,7 @@ class TileRenderer {
             canvas,
             credit,
             content.left + 10f * unit,
-            (btnTop - 8f * unit).coerceAtLeast(content.top + 14f * unit),
+            ((speedPanel?.top ?: btnTop) - 8f * unit).coerceAtLeast(content.top + 14f * unit),
             creditSize,
             withAlpha(theme.foreground, 200),
             maxWidth = (searchLeft - content.left - 16f * unit).coerceAtLeast(48f * unit),
@@ -2285,6 +2361,9 @@ class TileRenderer {
             recenter = recenter,
             searchOpen = searchOpen,
             navToggle = navToggle,
+            stepPrev = stepPrev,
+            stepNext = stepNext,
+            offRouteDismiss = offRouteDismiss,
         )
     }
 

@@ -19,7 +19,6 @@ import com.omarchy.auto.core.MapCameraStore
 import com.omarchy.auto.core.MediaTransport
 import com.omarchy.auto.core.MediaWatcher
 import com.omarchy.auto.core.NavigationController
-import com.omarchy.auto.core.NavState
 import com.omarchy.auto.core.OmarchyNotificationListener
 import com.omarchy.auto.core.RailConfigStore
 import com.omarchy.auto.core.StageWebApp
@@ -343,22 +342,34 @@ class TileView @JvmOverloads constructor(
             }
 
             TileRenderer.Target.MAP_NAV_TOGGLE -> {
-                when (NavigationController.navState) {
-                    NavState.ROUTE_ERROR,
-                    NavState.LOCATION_REQUIRED -> {
+                when (NavigationController.primaryAction()) {
+                    NavigationController.PrimaryAction.REROUTE ->
+                        NavigationController.recalculate()
+                    NavigationController.PrimaryAction.RETRY ->
                         NavigationController.retryRoute()
-                    }
-                    else -> {
-                        if (NavigationController.destination == null && !NavigationController.navActive) {
-                            renderer.openKeyboard(
-                                TileRenderer.KeyboardMode.MAP_SEARCH,
-                                NavigationController.searchQuery,
-                            )
-                        } else {
-                            NavigationController.toggleNavigation()
-                        }
-                    }
+                    NavigationController.PrimaryAction.OPEN_SEARCH ->
+                        renderer.openKeyboard(
+                            TileRenderer.KeyboardMode.MAP_SEARCH,
+                            NavigationController.searchQuery,
+                        )
+                    NavigationController.PrimaryAction.TOGGLE ->
+                        NavigationController.toggleNavigation()
                 }
+                invalidate()
+            }
+
+            TileRenderer.Target.MAP_STEP_PREV -> {
+                NavigationController.skipStepBack()
+                invalidate()
+            }
+
+            TileRenderer.Target.MAP_STEP_NEXT -> {
+                NavigationController.skipStepForward()
+                invalidate()
+            }
+
+            TileRenderer.Target.MAP_OFF_ROUTE_DISMISS -> {
+                NavigationController.dismissOffRoute()
                 invalidate()
             }
 

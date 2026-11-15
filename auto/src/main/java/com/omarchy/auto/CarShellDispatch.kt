@@ -9,7 +9,6 @@ import com.omarchy.auto.core.MapCameraStore
 import com.omarchy.auto.core.MediaTransport
 import com.omarchy.auto.core.MediaWatcher
 import com.omarchy.auto.core.NavigationController
-import com.omarchy.auto.core.NavState
 import com.omarchy.auto.core.OmarchyNotificationListener
 import com.omarchy.auto.core.RailConfigStore
 import com.omarchy.auto.core.StageWebApp
@@ -27,6 +26,13 @@ interface CarShellHost {
     fun openSearch()
     fun openNotifications()
     fun openSettings()
+
+    /**
+     * Called off the UI thread when the canvas stage switches between the map
+     * and another tile. The host action strip rebuilds so Drive-only actions do
+     * not sit on Media, Comms or Home.
+     */
+    fun onMapStageChanged(mapVisible: Boolean) {}
 }
 
 internal class CarShellDispatch(
@@ -141,19 +147,20 @@ internal class CarShellDispatch(
             TileRenderer.Target.MAP_SEARCH_OPEN -> host.openSearch()
 
             TileRenderer.Target.MAP_NAV_TOGGLE -> {
-                when (NavigationController.navState) {
-                    NavState.ROUTE_ERROR,
-                    NavState.LOCATION_REQUIRED,
-                    -> NavigationController.retryRoute()
-                    else -> {
-                        if (NavigationController.destination == null && !NavigationController.navActive) {
-                            host.openSearch()
-                        } else {
-                            NavigationController.toggleNavigation()
-                        }
-                    }
+                when (NavigationController.primaryAction()) {
+                    NavigationController.PrimaryAction.REROUTE ->
+                        NavigationController.recalculate()
+                    NavigationController.PrimaryAction.RETRY ->
+                        NavigationController.retryRoute()
+                    NavigationController.PrimaryAction.OPEN_SEARCH -> host.openSearch()
+                    NavigationController.PrimaryAction.TOGGLE ->
+                        NavigationController.toggleNavigation()
                 }
             }
+
+            TileRenderer.Target.MAP_STEP_PREV -> NavigationController.skipStepBack()
+            TileRenderer.Target.MAP_STEP_NEXT -> NavigationController.skipStepForward()
+            TileRenderer.Target.MAP_OFF_ROUTE_DISMISS -> NavigationController.dismissOffRoute()
 
             TileRenderer.Target.MAP_CANDIDATE_SELECT -> {
                 val cand = NavigationController.searchResults.getOrNull(hit.index) ?: return false

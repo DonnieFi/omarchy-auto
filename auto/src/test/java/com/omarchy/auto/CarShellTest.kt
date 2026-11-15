@@ -15,10 +15,15 @@ import com.omarchy.auto.core.LiveDataStore
 import com.omarchy.auto.core.MapCameraStore
 import com.omarchy.auto.core.MediaSnapshot
 import com.omarchy.auto.core.MediaTransport
+import com.omarchy.auto.core.NavState
+import com.omarchy.auto.core.NavigationController
 import com.omarchy.auto.core.NotificationItem
 import com.omarchy.auto.core.OmarchyTheme
+import com.omarchy.auto.core.ParsedRoute
 import com.omarchy.auto.core.RailConfigStore
 import com.omarchy.auto.core.RailItemId
+import com.omarchy.auto.core.RouteStep
+import com.omarchy.auto.core.SearchCandidate
 import com.omarchy.auto.core.ThemeStore
 import com.omarchy.auto.core.Themes
 import com.omarchy.auto.core.TileId
@@ -65,6 +70,7 @@ class CarShellTest {
     @Before
     fun setUp() {
         LiveDataStore.resetForTest()
+        NavigationController.resetForTest()
         DistractionLock.resetForTest()
         RailConfigStore.resetForTest()
         ThemeStore.select(0)
@@ -75,6 +81,7 @@ class CarShellTest {
     @After
     fun tearDown() {
         MediaTransport.commandSinkForTest = null
+        NavigationController.resetForTest()
         DistractionLock.resetForTest()
         ThemeStore.select(0)
         LiveDataStore.resetForTest()
@@ -291,6 +298,66 @@ class CarShellTest {
         val osakaTheme = AppBackground.load(context, Themes.at(1))
         assertNotNull(osakaTheme)
         assertTrue(channelDelta(onTokyo.getPixel(584, 496), osakaTheme!!.getPixel(584, 496)) > 40)
+    }
+
+    @Test
+    fun driveShowsStepSkipButtonsAndOnlyShowsTheSpeedBoxWhileMoving() {
+        val now = System.currentTimeMillis()
+        NavigationController.resetForTest()
+        NavigationController.synchronousForTest = true
+        NavigationController.routeTransport = { oLat, oLon, dLat, dLon ->
+            ParsedRoute(
+                geometry = listOf(oLat to oLon, dLat to dLon),
+                steps = listOf(
+                    RouteStep("TURN LEFT", "Yonge St", 450.0, 60.0, dLat, dLon, oLat, oLon),
+                    RouteStep("TURN RIGHT", "College St", 550.0, 90.0, dLat, dLon, dLat, dLon),
+                ),
+                totalDistanceMeters = 1000.0,
+                totalDurationSeconds = 150.0,
+            )
+        }
+        LiveDataStore.setLocationFix(0f, true, 43.6532, -79.3832, 0f, 5f, now)
+        NavigationController.selectDestination(
+            SearchCandidate("College", "Toronto", 43.66, -79.37),
+            autoStartNav = true,
+            nowMs = now,
+        )
+        assertEquals(NavState.ACTIVE, NavigationController.navState)
+
+        val renderer = TileRenderer()
+        renderer.show(TileId.DRIVE)
+        val dispatch = dispatcher(renderer, RecordingHost())
+        draw(renderer, TileRenderer.Mode.CAR)
+        assertTrue(renderer.lastFrame!!.drawsStepButtons)
+        assertFalse(renderer.lastFrame!!.drawsMovingSpeed)
+        assertNotNull(firstHit(renderer, TileRenderer.Target.MAP_STEP_NEXT))
+        assertNull(firstHit(renderer, TileRenderer.Target.MAP_STEP_PREV))
+        assertTrue(dispatch.apply(firstHit(renderer, TileRenderer.Target.MAP_STEP_NEXT)!!))
+        assertEquals(1, NavigationController.currentStepIndex)
+        draw(renderer, TileRenderer.Mode.CAR)
+        assertNotNull(firstHit(renderer, TileRenderer.Target.MAP_STEP_PREV))
+
+        // At speed the bottom-left speed box appears on the car canvas.
+        LiveDataStore.setLocationFix(30f, true, 43.6532, -79.3832, 0f, 5f, now + 1_000L)
+        draw(renderer, TileRenderer.Mode.CAR)
+        assertTrue(renderer.lastFrame!!.drawsMovingSpeed)
+
+        // Stopped again: no permanent overlay button.
+        LiveDataStore.setLocationFix(0f, true, 43.6532, -79.3832, 0f, 5f, now + 2_000L)
+        draw(renderer, TileRenderer.Mode.CAR)
+        assertFalse(renderer.lastFrame!!.drawsMovingSpeed)
+
+        // The off-route card can be tapped away without dropping the route.
+        NavigationController.onLocationUpdate(43.90, -79.90, 5f, now + 3_000L)
+        NavigationController.onLocationUpdate(43.90, -79.90, 5f, now + 4_000L)
+        assertTrue(NavigationController.offRoute)
+        draw(renderer, TileRenderer.Mode.CAR)
+        val dismiss = firstHit(renderer, TileRenderer.Target.MAP_OFF_ROUTE_DISMISS)
+        assertNotNull(dismiss)
+        assertTrue(dispatch.apply(dismiss!!))
+        assertFalse(NavigationController.offRoute)
+
+        NavigationController.stopNavigation()
     }
 
     private fun renderCar(background: Bitmap?, tile: TileId?): Rendered {
