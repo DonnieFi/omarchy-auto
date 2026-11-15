@@ -347,17 +347,59 @@ class CarShellTest {
         draw(renderer, TileRenderer.Mode.CAR)
         assertFalse(renderer.lastFrame!!.drawsMovingSpeed)
 
-        // The off-route card can be tapped away without dropping the route.
+        // Canvas pan buttons move the camera off follow mode and recenter restores it.
+        assertTrue(MapCameraStore.followGps)
+        val panUp = firstHit(renderer, TileRenderer.Target.MAP_PAN_UP)
+        assertNotNull(panUp)
+        assertTrue(dispatch.apply(panUp!!))
+        assertFalse(MapCameraStore.followGps)
+        val recenter = firstHit(renderer, TileRenderer.Target.MAP_RECENTER)
+        assertNotNull(recenter)
+        assertTrue(dispatch.apply(recenter!!))
+        assertTrue(MapCameraStore.followGps)
+
+        // The off-route card hides step skip buttons and can be tapped away without dropping the route.
         NavigationController.onLocationUpdate(43.90, -79.90, 5f, now + 3_000L)
         NavigationController.onLocationUpdate(43.90, -79.90, 5f, now + 4_000L)
         assertTrue(NavigationController.offRoute)
         draw(renderer, TileRenderer.Mode.CAR)
+        assertFalse(renderer.lastFrame!!.drawsStepButtons)
         val dismiss = firstHit(renderer, TileRenderer.Target.MAP_OFF_ROUTE_DISMISS)
         assertNotNull(dismiss)
         assertTrue(dispatch.apply(dismiss!!))
         assertFalse(NavigationController.offRoute)
 
         NavigationController.stopNavigation()
+    }
+
+    @Test
+    fun driveMapControlsDoNotStealRailTaps() {
+        val renderer = TileRenderer()
+        renderer.show(TileId.DRIVE)
+        draw(renderer, TileRenderer.Mode.CAR)
+
+        // 1280x720 car shell: rail starts at x=1062. These are the four rail
+        // tile centers. Each must select its tile, not a Drive zoom/recenter
+        // control that the old host map strip used to overlay on top of it.
+        val railCenters = listOf(
+            1162f to 160f,
+            1162f to 284f,
+            1162f to 408f,
+            1162f to 532f,
+        )
+        assertEquals(
+            listOf(
+                TileRenderer.Target.TILE_DRIVE,
+                TileRenderer.Target.TILE_MEDIA,
+                TileRenderer.Target.TILE_COMMS,
+                TileRenderer.Target.TILE_HOME,
+            ),
+            railCenters.map { (x, y) -> renderer.hitTest(x, y)?.target },
+        )
+
+        // The gap between the stage and the rail is dead space, not an
+        // invisible zoom/pan hit target.
+        assertNull(renderer.hitTest(1055f, 480f))
     }
 
     private fun renderCar(background: Bitmap?, tile: TileId?): Rendered {

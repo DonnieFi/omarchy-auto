@@ -329,33 +329,48 @@ object NavigationController {
         candidate: SearchCandidate,
         autoStartNav: Boolean = true,
         nowMs: Long = System.currentTimeMillis(),
+        preserveExistingOnPending: Boolean = false,
     ) {
         val token = routeGeneration.incrementAndGet()
         if (candidate != destination) lastAutoRerouteAtMs = 0L
+        val keepExisting = preserveExistingOnPending &&
+            candidate == destination &&
+            routeGeometry.size >= 2 &&
+            routeSteps.isNotEmpty()
         destination = candidate
         searchResults = emptyList()
-        // Immediately clear any previous route geometry/steps so old routes never linger.
-        routeGeometry = emptyList()
-        routeSteps = emptyList()
-        currentStepIndex = 0
-        remainingDistanceMeters = 0.0
-        remainingDurationSeconds = 0.0
-        distanceToNextTurnMeters = 0.0
-        currentLegRemainingMeters = 0.0
-        active = false
+        if (!keepExisting) {
+            // Immediately clear any previous route geometry/steps so old routes never linger.
+            routeGeometry = emptyList()
+            routeSteps = emptyList()
+            currentStepIndex = 0
+            remainingDistanceMeters = 0.0
+            remainingDurationSeconds = 0.0
+            distanceToNextTurnMeters = 0.0
+            currentLegRemainingMeters = 0.0
+            active = false
+        }
 
         val origin = validGpsOrigin(nowMs)
         if (origin == null) {
             routingInFlight = false
-            navState = NavState.LOCATION_REQUIRED
-            statusMessage = "LOCATION REQUIRED · WAIT FOR GPS FIX"
+            if (!keepExisting) {
+                navState = NavState.LOCATION_REQUIRED
+                statusMessage = "LOCATION REQUIRED · WAIT FOR GPS FIX"
+            } else {
+                statusMessage = null
+            }
             LiveDataStore.notifyDisplayChanged()
             return
         }
 
         routingInFlight = true
-        navState = NavState.ROUTING
-        statusMessage = "ROUTING..."
+        if (!keepExisting) {
+            navState = NavState.ROUTING
+            statusMessage = "ROUTING..."
+        } else {
+            statusMessage = "REROUTING..."
+        }
         if (autoStartNav) {
             MapCameraStore.recenter()
         } else {
@@ -384,6 +399,12 @@ object NavigationController {
                 applyRoute(route, originLat, originLon)
                 active = autoStartNav
                 navState = if (autoStartNav) NavState.ACTIVE else NavState.PREVIEW
+                statusMessage = null
+            } else if (keepExisting) {
+                // Keep the existing fallback route active when a background
+                // reroute fails in poor coverage instead of dropping guidance.
+                active = true
+                navState = NavState.ACTIVE
                 statusMessage = null
             } else {
                 active = false
@@ -526,7 +547,12 @@ object NavigationController {
         offRouteHits = 0
         autoDriveDistanceM = 0.0
         autoDriveLastMs = -1L
-        selectDestination(dest, autoStartNav = true, nowMs = nowMs)
+        selectDestination(
+            dest,
+            autoStartNav = true,
+            nowMs = nowMs,
+            preserveExistingOnPending = true,
+        )
     }
 
     /**
@@ -544,11 +570,12 @@ object NavigationController {
         selectStep(currentStepIndex - 1)
     }
 
-    /** Drops the off-route warning but keeps the current route. */
-    fun dismissOffRoute() {
+    /** Drops the off-route warning and cools down auto-reroute while keeping the route. */
+    fun dismissOffRoute(nowMs: Long = System.currentTimeMillis()) {
         if (!offRoute && offRouteHits == 0) return
         offRoute = false
         offRouteHits = 0
+        lastAutoRerouteAtMs = nowMs
         if (statusMessage == OFF_ROUTE_STATUS) statusMessage = null
         LiveDataStore.notifyDisplayChanged()
     }

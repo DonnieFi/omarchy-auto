@@ -599,6 +599,35 @@ class CarUxFeaturesTest {
     }
 
     @Test
+    fun failedAutoReroutePreservesTheActiveRoute() {
+        val now = System.currentTimeMillis()
+        var routes = 0
+        NavigationController.synchronousForTest = true
+        val parsed = NavigationController.parseOsrmRouteJson(sampleOsrmJson)
+        NavigationController.routeTransport = { _, _, _, _ ->
+            routes += 1
+            if (routes == 1) parsed else null
+        }
+        fix(43.6532, -79.3832, 5f, now)
+        NavigationController.selectDestination(
+            SearchCandidate("Destination", "Toronto", 43.6580, -79.3750),
+            autoStartNav = true,
+            nowMs = now,
+        )
+        assertEquals(1, routes)
+
+        NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 2_000L)
+        NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 3_000L)
+        assertTrue(NavigationController.offRoute)
+
+        NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 4_000L)
+        assertEquals(2, routes)
+        assertEquals(NavState.ACTIVE, NavigationController.navState)
+        assertEquals(2, NavigationController.routeSteps.size)
+        assertTrue(NavigationController.routeGeometry.size >= 2)
+    }
+
+    @Test
     fun manualStepSkipMovesGuidanceWithoutDroppingTheRoute() {
         val now = System.currentTimeMillis()
         NavigationController.synchronousForTest = true
@@ -629,11 +658,15 @@ class CarUxFeaturesTest {
     }
 
     @Test
-    fun dismissOffRouteKeepsTheRouteAndClearsTheWarning() {
+    fun dismissOffRouteKeepsTheRouteAndCoolsDownAutoReroute() {
         val now = System.currentTimeMillis()
+        var routes = 0
         NavigationController.synchronousForTest = true
         val parsed = NavigationController.parseOsrmRouteJson(sampleOsrmJson)
-        NavigationController.routeTransport = { _, _, _, _ -> parsed }
+        NavigationController.routeTransport = { _, _, _, _ ->
+            routes += 1
+            parsed
+        }
         fix(43.6532, -79.3832, 5f, now)
         NavigationController.selectDestination(
             SearchCandidate("Destination", "Toronto", 43.6580, -79.3750),
@@ -644,11 +677,17 @@ class CarUxFeaturesTest {
         NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 3_000L)
         assertTrue(NavigationController.offRoute)
 
-        NavigationController.dismissOffRoute()
+        NavigationController.dismissOffRoute(nowMs = now + 4_000L)
         assertFalse(NavigationController.offRoute)
         assertNull(NavigationController.statusMessage)
         assertEquals(2, NavigationController.routeSteps.size)
         assertEquals(NavState.ACTIVE, NavigationController.navState)
+
+        // Within the 15 s cooldown after dismissing, off-route fixes do not immediately reroute.
+        NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 5_000L)
+        NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 6_000L)
+        NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 7_000L)
+        assertEquals(1, routes)
     }
 
     @Test

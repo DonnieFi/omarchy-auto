@@ -333,6 +333,26 @@ class TileView @JvmOverloads constructor(
                 invalidate()
             }
 
+            TileRenderer.Target.MAP_PAN_UP -> {
+                MapCameraStore.panByStep(0f, -96f)
+                invalidate()
+            }
+
+            TileRenderer.Target.MAP_PAN_DOWN -> {
+                MapCameraStore.panByStep(0f, 96f)
+                invalidate()
+            }
+
+            TileRenderer.Target.MAP_PAN_LEFT -> {
+                MapCameraStore.panByStep(-96f, 0f)
+                invalidate()
+            }
+
+            TileRenderer.Target.MAP_PAN_RIGHT -> {
+                MapCameraStore.panByStep(96f, 0f)
+                invalidate()
+            }
+
             TileRenderer.Target.MAP_SEARCH_OPEN -> {
                 renderer.openKeyboard(
                     TileRenderer.KeyboardMode.MAP_SEARCH,

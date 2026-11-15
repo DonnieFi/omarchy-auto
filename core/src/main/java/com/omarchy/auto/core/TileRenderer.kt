@@ -60,6 +60,10 @@ class TileRenderer {
         MAP_ZOOM_IN,
         MAP_ZOOM_OUT,
         MAP_RECENTER,
+        MAP_PAN_UP,
+        MAP_PAN_DOWN,
+        MAP_PAN_LEFT,
+        MAP_PAN_RIGHT,
         MAP_SEARCH_OPEN,
         MAP_NAV_TOGGLE,
         MAP_STEP_PREV,
@@ -152,6 +156,10 @@ class TileRenderer {
         val mapZoomIn: RectF?,
         val mapZoomOut: RectF?,
         val mapRecenter: RectF?,
+        val mapPanUp: RectF? = null,
+        val mapPanDown: RectF? = null,
+        val mapPanLeft: RectF? = null,
+        val mapPanRight: RectF? = null,
         val mapSearchOpen: RectF?,
         val mapNavToggle: RectF?,
         val mapStepPrev: RectF? = null,
@@ -193,6 +201,10 @@ class TileRenderer {
         val mapZoomIn: RectF? = null,
         val mapZoomOut: RectF? = null,
         val mapRecenter: RectF? = null,
+        val mapPanUp: RectF? = null,
+        val mapPanDown: RectF? = null,
+        val mapPanLeft: RectF? = null,
+        val mapPanRight: RectF? = null,
         val mapSearchOpen: RectF? = null,
         val mapNavToggle: RectF? = null,
         val mapStepPrev: RectF? = null,
@@ -204,6 +216,10 @@ class TileRenderer {
         val zoomIn: RectF? = null,
         val zoomOut: RectF? = null,
         val recenter: RectF? = null,
+        val panUp: RectF? = null,
+        val panDown: RectF? = null,
+        val panLeft: RectF? = null,
+        val panRight: RectF? = null,
         val searchOpen: RectF? = null,
         val navToggle: RectF? = null,
         val stepPrev: RectF? = null,
@@ -782,6 +798,10 @@ class TileRenderer {
             mapZoomIn = stageHit.mapZoomIn?.let { RectF(it) },
             mapZoomOut = stageHit.mapZoomOut?.let { RectF(it) },
             mapRecenter = stageHit.mapRecenter?.let { RectF(it) },
+            mapPanUp = stageHit.mapPanUp?.let { RectF(it) },
+            mapPanDown = stageHit.mapPanDown?.let { RectF(it) },
+            mapPanLeft = stageHit.mapPanLeft?.let { RectF(it) },
+            mapPanRight = stageHit.mapPanRight?.let { RectF(it) },
             mapSearchOpen = stageHit.mapSearchOpen?.let { RectF(it) },
             mapNavToggle = stageHit.mapNavToggle?.let { RectF(it) },
             mapStepPrev = stageHit.mapStepPrev?.let { RectF(it) },
@@ -887,6 +907,10 @@ class TileRenderer {
         layout.mapZoomIn?.takeIf { it.contains(x, y) }?.let { return Hit(Target.MAP_ZOOM_IN) }
         layout.mapZoomOut?.takeIf { it.contains(x, y) }?.let { return Hit(Target.MAP_ZOOM_OUT) }
         layout.mapRecenter?.takeIf { it.contains(x, y) }?.let { return Hit(Target.MAP_RECENTER) }
+        layout.mapPanUp?.takeIf { it.contains(x, y) }?.let { return Hit(Target.MAP_PAN_UP) }
+        layout.mapPanDown?.takeIf { it.contains(x, y) }?.let { return Hit(Target.MAP_PAN_DOWN) }
+        layout.mapPanLeft?.takeIf { it.contains(x, y) }?.let { return Hit(Target.MAP_PAN_LEFT) }
+        layout.mapPanRight?.takeIf { it.contains(x, y) }?.let { return Hit(Target.MAP_PAN_RIGHT) }
         layout.mapSearchOpen?.takeIf { it.contains(x, y) }?.let { return Hit(Target.MAP_SEARCH_OPEN) }
         layout.mapNavToggle?.takeIf { it.contains(x, y) }?.let { return Hit(Target.MAP_NAV_TOGGLE) }
         layout.mapStepPrev?.takeIf { it.contains(x, y) }?.let { return Hit(Target.MAP_STEP_PREV) }
@@ -931,6 +955,7 @@ class TileRenderer {
         theme: OmarchyTheme,
         unit: Float,
     ): Boolean {
+        if (width <= 0 || height <= 0) return false
         val bitmap = background
         val drewBitmap = bitmap != null
         if (bitmap != null) {
@@ -1047,9 +1072,9 @@ class TileRenderer {
                 canvas.drawRect(area.left, y, area.right, y + 1f, fill)
                 y += step
             }
+            drawVignette(canvas, width, height, theme)
         }
 
-        drawVignette(canvas, width, height, theme)
         return drewBitmap
     }
 
@@ -1365,6 +1390,10 @@ class TileRenderer {
             mapZoomIn = driveHit.zoomIn,
             mapZoomOut = driveHit.zoomOut,
             mapRecenter = driveHit.recenter,
+            mapPanUp = driveHit.panUp,
+            mapPanDown = driveHit.panDown,
+            mapPanLeft = driveHit.panLeft,
+            mapPanRight = driveHit.panRight,
             mapSearchOpen = driveHit.searchOpen,
             mapNavToggle = driveHit.navToggle,
             mapStepPrev = driveHit.stepPrev,
@@ -1950,7 +1979,7 @@ class TileRenderer {
         alignBottom: Boolean,
     ): RectF {
         val panelH = 76f * unit
-        val panelW = 190f * unit
+        val panelW = minOf(190f * unit, (overlay.width() - 120f * unit).coerceAtLeast(110f * unit))
         val top = if (alignBottom) overlay.bottom - panelH else overlay.top
         val panel = RectF(overlay.left, top, overlay.left + panelW, top + panelH)
         fill.style = Paint.Style.FILL
@@ -2137,7 +2166,9 @@ class TileRenderer {
                 content.left + 10f * unit + bannerWidth,
                 content.top + topInset + 70f * unit,
             )
-            val showStepButtons = navState == NavState.ACTIVE && NavigationController.steps.size > 1
+            val showStepButtons = !offRoute &&
+                navState == NavState.ACTIVE &&
+                NavigationController.steps.size > 1
             val stepSize = 38f * unit
             val stepGap = 6f * unit
             val controlsWidth = if (showStepButtons) stepSize * 2f + stepGap + 10f * unit else 0f
@@ -2309,6 +2340,35 @@ class TileRenderer {
         // Bottom-right Search Address & Start/Stop/Retry Navigation buttons
         val btnH = 34f * unit
         val btnTop = content.bottom - 10f * unit - btnH
+
+        // Canvas pan cross under Z<zoom> so Android Auto panning works on
+        // the Drive canvas without a host map strip over the rail.
+        val panSize = 26f * unit
+        val panGap = 3f * unit
+        val panTop = recenter.bottom + 20f * unit
+        val panBottom = panTop + panSize * 3f + panGap * 2f
+        var panUp: RectF? = null
+        var panDown: RectF? = null
+        var panLeft: RectF? = null
+        var panRight: RectF? = null
+        if (panBottom <= btnTop - 8f * unit) {
+            val panRowW = panSize * 2f + panGap
+            val panMidX = ctrlRight - panRowW / 2f
+            val upRect = RectF(panMidX - panSize / 2f, panTop, panMidX + panSize / 2f, panTop + panSize)
+            val midTop = upRect.bottom + panGap
+            val leftRect = RectF(ctrlRight - panRowW, midTop, ctrlRight - panRowW + panSize, midTop + panSize)
+            val rightRect = RectF(ctrlRight - panSize, midTop, ctrlRight, midTop + panSize)
+            val downTop = midTop + panSize + panGap
+            val downRect = RectF(panMidX - panSize / 2f, downTop, panMidX + panSize / 2f, downTop + panSize)
+            drawTextButton(canvas, upRect, "▲", theme, unit)
+            drawTextButton(canvas, leftRect, "◀", theme, unit)
+            drawTextButton(canvas, rightRect, "▶", theme, unit)
+            drawTextButton(canvas, downRect, "▼", theme, unit)
+            panUp = upRect
+            panLeft = leftRect
+            panRight = rightRect
+            panDown = downRect
+        }
         val navLabel = when {
             offRoute -> "REROUTE"
             navState == NavState.ACTIVE || navState == NavState.ROUTING -> "STOP NAV"
@@ -2359,6 +2419,10 @@ class TileRenderer {
             zoomIn = zoomIn,
             zoomOut = zoomOut,
             recenter = recenter,
+            panUp = panUp,
+            panDown = panDown,
+            panLeft = panLeft,
+            panRight = panRight,
             searchOpen = searchOpen,
             navToggle = navToggle,
             stepPrev = stepPrev,

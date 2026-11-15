@@ -88,7 +88,7 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
         }
     }
 
-    private var mapStageVisible = true
+    private var mapStageVisible = NavigationController.navState != NavState.IDLE
 
     private val autoDriveTick = object : Runnable {
         override fun run() {
@@ -349,7 +349,8 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
     }
 
     override fun onGetTemplate(): Template {
-        mapStageVisible = surfaceRenderer?.isMapStageVisible() ?: mapStageVisible
+        mapStageVisible = surfaceRenderer?.isMapStageVisible()
+            ?: (NavigationController.navState != NavState.IDLE)
         templateStamp = navStamp()
         val builder = NavigationTemplate.Builder()
             .setActionStrip(actionStrip(mapStageVisible))

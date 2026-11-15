@@ -141,6 +141,10 @@ internal class CarShellDispatch(
             TileRenderer.Target.MAP_ZOOM_IN -> MapCameraStore.zoomIn()
             TileRenderer.Target.MAP_ZOOM_OUT -> MapCameraStore.zoomOut()
             TileRenderer.Target.MAP_RECENTER -> MapCameraStore.recenter()
+            TileRenderer.Target.MAP_PAN_UP -> MapCameraStore.panByStep(0f, -PAN_STEP_PX)
+            TileRenderer.Target.MAP_PAN_DOWN -> MapCameraStore.panByStep(0f, PAN_STEP_PX)
+            TileRenderer.Target.MAP_PAN_LEFT -> MapCameraStore.panByStep(-PAN_STEP_PX, 0f)
+            TileRenderer.Target.MAP_PAN_RIGHT -> MapCameraStore.panByStep(PAN_STEP_PX, 0f)
 
             // The car canvas does not use the custom keyboard. The host search
             // screen accepts voice while driving and the host keyboard when parked.
@@ -213,5 +217,9 @@ internal class CarShellDispatch(
             TileRenderer.Target.TILE_HOME -> renderer.toggle(TileId.HOME)
         }
         return true
+    }
+
+    private companion object {
+        private const val PAN_STEP_PX = 96f
     }
 }

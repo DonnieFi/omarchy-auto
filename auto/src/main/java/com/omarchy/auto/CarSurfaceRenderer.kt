@@ -69,6 +69,8 @@ class CarSurfaceRenderer(
 
     @Volatile
     private var mapStageVisible = false
+    private var mapStageSynced = false
+    private val drawPending = AtomicBoolean(false)
 
     init {
         BackgroundStore.init(appContext)
@@ -92,6 +94,7 @@ class CarSurfaceRenderer(
     }
 
     private val immediateDraw = Runnable {
+        drawPending.set(false)
         if (!stopped) draw()
     }
 
@@ -103,6 +106,7 @@ class CarSurfaceRenderer(
     fun stop() {
         if (stopped) return
         stopped = true
+        drawPending.set(false)
         StageWebController.setActive(false)
         handler.removeCallbacksAndMessages(null)
         thread.quitSafely()
@@ -122,10 +126,11 @@ class CarSurfaceRenderer(
 
     fun requestDraw() {
         if (stopped) return
-        handler.removeCallbacks(immediateDraw)
-        // Coalesce bursts from a location fix, a map snapshot and media
-        // progress into one frame instead of painting each event separately.
-        handler.postDelayed(immediateDraw, FRAME_COALESCE_MS)
+        // Coalesce bursts into one frame within 16 ms without starving when
+        // events arrive faster than the frame interval.
+        if (drawPending.compareAndSet(false, true)) {
+            handler.postDelayed(immediateDraw, FRAME_COALESCE_MS)
+        }
     }
 
     fun openSettings() {
@@ -327,7 +332,8 @@ class CarSurfaceRenderer(
 
     private fun syncMapStage() {
         val next = renderer.selected == TileId.DRIVE
-        if (next == mapStageVisible) return
+        if (mapStageSynced && next == mapStageVisible) return
+        mapStageSynced = true
         mapStageVisible = next
         host.onMapStageChanged(next)
     }

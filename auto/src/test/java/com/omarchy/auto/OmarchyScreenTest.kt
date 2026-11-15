@@ -75,7 +75,7 @@ class OmarchyScreenTest {
         val template = OmarchyScreen(carContext).onGetTemplate() as NavigationTemplate
         assertNotNull(template.actionStrip)
         assertEquals(
-            listOf("Search", "Menu", "Heading"),
+            listOf("Search", "Menu"),
             template.actionStrip!!.actions.map { it.title?.toString() },
         )
         // Search must stay tappable while driving. A parked-only listener is
