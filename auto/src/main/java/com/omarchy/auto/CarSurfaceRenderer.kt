@@ -64,6 +64,14 @@ class CarSurfaceRenderer(
     @Volatile
     private var stopped = false
 
+    /** Hardware canvases are faster for this text/bitmap shell; fall back once. */
+    private var hardwareCanvasDisabled = false
+
+    @Volatile
+    private var mapStageVisible = false
+    private var mapStageSynced = false
+    private val drawPending = AtomicBoolean(false)
+
     init {
         BackgroundStore.init(appContext)
         DisplaySettings.init(appContext)
@@ -73,6 +81,7 @@ class CarSurfaceRenderer(
         if (NavigationController.navState != NavState.IDLE) {
             renderer.show(TileId.DRIVE)
         }
+        mapStageVisible = renderer.selected == TileId.DRIVE
         refreshBackground()
     }
 
@@ -85,6 +94,7 @@ class CarSurfaceRenderer(
     }
 
     private val immediateDraw = Runnable {
+        drawPending.set(false)
         if (!stopped) draw()
     }
 
@@ -96,6 +106,7 @@ class CarSurfaceRenderer(
     fun stop() {
         if (stopped) return
         stopped = true
+        drawPending.set(false)
         StageWebController.setActive(false)
         handler.removeCallbacksAndMessages(null)
         thread.quitSafely()
@@ -115,8 +126,11 @@ class CarSurfaceRenderer(
 
     fun requestDraw() {
         if (stopped) return
-        handler.removeCallbacks(immediateDraw)
-        handler.post(immediateDraw)
+        // Coalesce bursts into one frame within 16 ms without starving when
+        // events arrive faster than the frame interval.
+        if (drawPending.compareAndSet(false, true)) {
+            handler.postDelayed(immediateDraw, FRAME_COALESCE_MS)
+        }
     }
 
     fun openSettings() {
@@ -140,6 +154,9 @@ class CarSurfaceRenderer(
     fun setSafeArea(rect: Rect?) {
         renderer.setSafeArea(rect)
     }
+
+    /** True while the visible canvas stage is the Drive map. */
+    fun isMapStageVisible(): Boolean = mapStageVisible
 
     fun dismissDistractions() {
         if (stopped) return
@@ -283,7 +300,7 @@ class CarSurfaceRenderer(
             if (!stopped) {
                 var canvas: Canvas? = null
                 try {
-                    canvas = surface.lockCanvas(null)
+                    canvas = lockCanvas()
                     if (canvas != null) {
                         renderer.draw(
                             canvas = canvas,
@@ -293,6 +310,7 @@ class CarSurfaceRenderer(
                             themeIndex = ThemeStore.index,
                             mode = TileRenderer.Mode.CAR,
                         )
+                        syncMapStage()
                     }
                 } catch (error: Exception) {
                     OaLog.w(TAG, "Surface draw failed", error)
@@ -312,6 +330,27 @@ class CarSurfaceRenderer(
         if (stopped) releaseSurface()
     }
 
+    private fun syncMapStage() {
+        val next = renderer.selected == TileId.DRIVE
+        if (mapStageSynced && next == mapStageVisible) return
+        mapStageSynced = true
+        mapStageVisible = next
+        host.onMapStageChanged(next)
+    }
+
+    private fun lockCanvas(): Canvas? {
+        if (!hardwareCanvasDisabled) {
+            try {
+                return surface.lockHardwareCanvas()
+            } catch (_: Throwable) {
+                // Some hosts hand back a surface that cannot be locked as a
+                // hardware canvas. Switching costs one software frame.
+                hardwareCanvasDisabled = true
+            }
+        }
+        return surface.lockCanvas(null)
+    }
+
     private fun releaseSurface() {
         if (!released.compareAndSet(false, true)) return
         try {
@@ -323,5 +362,6 @@ class CarSurfaceRenderer(
 
     companion object {
         private const val TAG = "CarSurfaceRenderer"
+        private const val FRAME_COALESCE_MS = 16L
     }
 }

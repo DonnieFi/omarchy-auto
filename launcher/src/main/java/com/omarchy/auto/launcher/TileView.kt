@@ -19,7 +19,6 @@ import com.omarchy.auto.core.MapCameraStore
 import com.omarchy.auto.core.MediaTransport
 import com.omarchy.auto.core.MediaWatcher
 import com.omarchy.auto.core.NavigationController
-import com.omarchy.auto.core.NavState
 import com.omarchy.auto.core.OmarchyNotificationListener
 import com.omarchy.auto.core.RailConfigStore
 import com.omarchy.auto.core.StageWebApp
@@ -334,6 +333,26 @@ class TileView @JvmOverloads constructor(
                 invalidate()
             }
 
+            TileRenderer.Target.MAP_PAN_UP -> {
+                MapCameraStore.panByStep(0f, -96f)
+                invalidate()
+            }
+
+            TileRenderer.Target.MAP_PAN_DOWN -> {
+                MapCameraStore.panByStep(0f, 96f)
+                invalidate()
+            }
+
+            TileRenderer.Target.MAP_PAN_LEFT -> {
+                MapCameraStore.panByStep(-96f, 0f)
+                invalidate()
+            }
+
+            TileRenderer.Target.MAP_PAN_RIGHT -> {
+                MapCameraStore.panByStep(96f, 0f)
+                invalidate()
+            }
+
             TileRenderer.Target.MAP_SEARCH_OPEN -> {
                 renderer.openKeyboard(
                     TileRenderer.KeyboardMode.MAP_SEARCH,
@@ -343,22 +362,34 @@ class TileView @JvmOverloads constructor(
             }
 
             TileRenderer.Target.MAP_NAV_TOGGLE -> {
-                when (NavigationController.navState) {
-                    NavState.ROUTE_ERROR,
-                    NavState.LOCATION_REQUIRED -> {
+                when (NavigationController.primaryAction()) {
+                    NavigationController.PrimaryAction.REROUTE ->
+                        NavigationController.recalculate()
+                    NavigationController.PrimaryAction.RETRY ->
                         NavigationController.retryRoute()
-                    }
-                    else -> {
-                        if (NavigationController.destination == null && !NavigationController.navActive) {
-                            renderer.openKeyboard(
-                                TileRenderer.KeyboardMode.MAP_SEARCH,
-                                NavigationController.searchQuery,
-                            )
-                        } else {
-                            NavigationController.toggleNavigation()
-                        }
-                    }
+                    NavigationController.PrimaryAction.OPEN_SEARCH ->
+                        renderer.openKeyboard(
+                            TileRenderer.KeyboardMode.MAP_SEARCH,
+                            NavigationController.searchQuery,
+                        )
+                    NavigationController.PrimaryAction.TOGGLE ->
+                        NavigationController.toggleNavigation()
                 }
+                invalidate()
+            }
+
+            TileRenderer.Target.MAP_STEP_PREV -> {
+                NavigationController.skipStepBack()
+                invalidate()
+            }
+
+            TileRenderer.Target.MAP_STEP_NEXT -> {
+                NavigationController.skipStepForward()
+                invalidate()
+            }
+
+            TileRenderer.Target.MAP_OFF_ROUTE_DISMISS -> {
+                NavigationController.dismissOffRoute()
                 invalidate()
             }
 

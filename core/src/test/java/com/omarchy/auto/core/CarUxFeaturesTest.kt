@@ -402,7 +402,7 @@ class CarUxFeaturesTest {
                 nowMs = 1_500L,
                 lastRequestAtMs = 0L,
                 needsInitial = false,
-                movedMeters = 8f,
+                movedMeters = 12f,
                 turnedDegrees = 0f,
                 following = true,
             ),
@@ -434,8 +434,9 @@ class CarUxFeaturesTest {
         assertTrue(DistractionLock.suppressesSharedDistractions())
         assertFalse(CarPlatformPolicy.mapOnly(CarPlatformPolicy.Surface.ANDROID_AUTO))
         assertFalse(CarPlatformPolicy.allowsHostRoutingCards(CarPlatformPolicy.Surface.ANDROID_AUTO))
-        assertFalse(CarPlatformPolicy.allowsCompactSpeed(CarPlatformPolicy.Surface.ANDROID_AUTO))
-        assertTrue(CarPlatformPolicy.allowsCompactSpeed(CarPlatformPolicy.Surface.PHONE))
+        assertFalse(CarPlatformPolicy.allowsCompactSpeed(CarPlatformPolicy.Surface.ANDROID_AUTO, 2f))
+        assertTrue(CarPlatformPolicy.allowsCompactSpeed(CarPlatformPolicy.Surface.ANDROID_AUTO, 25f))
+        assertTrue(CarPlatformPolicy.allowsCompactSpeed(CarPlatformPolicy.Surface.PHONE, null))
         assertTrue(CarPlatformPolicy.allowsCustomRail(CarPlatformPolicy.Surface.ANDROID_AUTO))
         assertTrue(CarPlatformPolicy.allowsDecorativeWallpaper(CarPlatformPolicy.Surface.ANDROID_AUTO))
         assertFalse(CarPlatformPolicy.allowsWebStage(CarPlatformPolicy.Surface.ANDROID_AUTO))
@@ -549,6 +550,7 @@ class CarUxFeaturesTest {
         )
         NavigationController.onLocationUpdate(43.6532, -79.3832, 5f, now + 1_000L)
         assertFalse(NavigationController.offRoute)
+        assertEquals(NavigationController.PrimaryAction.TOGGLE, NavigationController.primaryAction())
 
         NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 2_000L)
         assertFalse(NavigationController.offRoute)
@@ -558,10 +560,134 @@ class CarUxFeaturesTest {
         assertTrue(NavigationController.offRoute)
         assertEquals("OFF THE ROUTE", NavigationController.statusMessage)
         assertEquals(0, NavigationController.currentStepIndex)
+        assertEquals(NavigationController.PrimaryAction.REROUTE, NavigationController.primaryAction())
 
         NavigationController.onLocationUpdate(43.6532, -79.3832, 5f, now + 4_000L)
         assertFalse(NavigationController.offRoute)
         assertNull(NavigationController.statusMessage)
+    }
+
+    @Test
+    fun thirdOffRouteFixRebuildsTheRouteFromTheCurrentPosition() {
+        val now = System.currentTimeMillis()
+        var routes = 0
+        NavigationController.synchronousForTest = true
+        val parsed = NavigationController.parseOsrmRouteJson(sampleOsrmJson)
+        NavigationController.routeTransport = { _, _, _, _ ->
+            routes += 1
+            parsed
+        }
+        fix(43.6532, -79.3832, 5f, now)
+        NavigationController.selectDestination(
+            SearchCandidate("Destination", "Toronto", 43.6580, -79.3750),
+            autoStartNav = true,
+            nowMs = now,
+        )
+        assertEquals(1, routes)
+
+        NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 2_000L)
+        NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 3_000L)
+        assertTrue(NavigationController.offRoute)
+        assertEquals(1, routes)
+
+        // The third consecutive off-route fix starts a fresh route instead of
+        // leaving the driver stuck on the old prompt.
+        NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 4_000L)
+        assertEquals(2, routes)
+        assertEquals(NavState.ACTIVE, NavigationController.navState)
+        assertFalse(NavigationController.offRoute)
+    }
+
+    @Test
+    fun failedAutoReroutePreservesTheActiveRoute() {
+        val now = System.currentTimeMillis()
+        var routes = 0
+        NavigationController.synchronousForTest = true
+        val parsed = NavigationController.parseOsrmRouteJson(sampleOsrmJson)
+        NavigationController.routeTransport = { _, _, _, _ ->
+            routes += 1
+            if (routes == 1) parsed else null
+        }
+        fix(43.6532, -79.3832, 5f, now)
+        NavigationController.selectDestination(
+            SearchCandidate("Destination", "Toronto", 43.6580, -79.3750),
+            autoStartNav = true,
+            nowMs = now,
+        )
+        assertEquals(1, routes)
+
+        NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 2_000L)
+        NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 3_000L)
+        assertTrue(NavigationController.offRoute)
+
+        NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 4_000L)
+        assertEquals(2, routes)
+        assertEquals(NavState.ACTIVE, NavigationController.navState)
+        assertEquals(2, NavigationController.routeSteps.size)
+        assertTrue(NavigationController.routeGeometry.size >= 2)
+    }
+
+    @Test
+    fun manualStepSkipMovesGuidanceWithoutDroppingTheRoute() {
+        val now = System.currentTimeMillis()
+        NavigationController.synchronousForTest = true
+        val parsed = NavigationController.parseOsrmRouteJson(sampleOsrmJson)
+        NavigationController.routeTransport = { _, _, _, _ -> parsed }
+        fix(43.6532, -79.3832, 5f, now)
+        NavigationController.selectDestination(
+            SearchCandidate("Destination", "Toronto", 43.6580, -79.3750),
+            autoStartNav = true,
+            nowMs = now,
+        )
+        assertEquals(0, NavigationController.currentStepIndex)
+        assertFalse(NavigationController.canSkipStepBack)
+        assertTrue(NavigationController.canSkipStepForward)
+
+        NavigationController.skipStepForward()
+        assertEquals(1, NavigationController.currentStepIndex)
+        assertEquals(1000.0, NavigationController.remainingDistanceMeters, 0.01)
+        assertEquals(150.0, NavigationController.remainingDurationSeconds, 0.01)
+        assertFalse(NavigationController.canSkipStepForward)
+
+        NavigationController.skipStepForward()
+        assertEquals(1, NavigationController.currentStepIndex)
+
+        NavigationController.skipStepBack()
+        assertEquals(0, NavigationController.currentStepIndex)
+        assertEquals(1450.0, NavigationController.remainingDistanceMeters, 0.01)
+    }
+
+    @Test
+    fun dismissOffRouteKeepsTheRouteAndCoolsDownAutoReroute() {
+        val now = System.currentTimeMillis()
+        var routes = 0
+        NavigationController.synchronousForTest = true
+        val parsed = NavigationController.parseOsrmRouteJson(sampleOsrmJson)
+        NavigationController.routeTransport = { _, _, _, _ ->
+            routes += 1
+            parsed
+        }
+        fix(43.6532, -79.3832, 5f, now)
+        NavigationController.selectDestination(
+            SearchCandidate("Destination", "Toronto", 43.6580, -79.3750),
+            autoStartNav = true,
+            nowMs = now,
+        )
+        NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 2_000L)
+        NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 3_000L)
+        assertTrue(NavigationController.offRoute)
+
+        NavigationController.dismissOffRoute(nowMs = now + 4_000L)
+        assertFalse(NavigationController.offRoute)
+        assertNull(NavigationController.statusMessage)
+        assertEquals(2, NavigationController.routeSteps.size)
+        assertEquals(NavState.ACTIVE, NavigationController.navState)
+
+        // Within the 15 s cooldown after dismissing, off-route fixes do not immediately reroute.
+        NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 5_000L)
+        NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 6_000L)
+        NavigationController.onLocationUpdate(43.70, -79.50, 5f, now + 7_000L)
+        assertEquals(1, routes)
     }
 
     @Test

@@ -76,7 +76,19 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
         override fun openSettings() {
             this@OmarchyScreen.openSettings()
         }
+
+        override fun onMapStageChanged(mapVisible: Boolean) {
+            // Called from the render thread; Screen.invalidate belongs to main.
+            mainHandler.post {
+                if (mapVisible == mapStageVisible) return@post
+                mapStageVisible = mapVisible
+                templateStamp = ""
+                if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) invalidate()
+            }
+        }
     }
+
+    private var mapStageVisible = NavigationController.navState != NavState.IDLE
 
     private val autoDriveTick = object : Runnable {
         override fun run() {
@@ -139,13 +151,9 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
         }
     }
 
-    // Map-strip actions must stay icon-only. A title makes NavigationTemplate reject the strip.
-    private val mapActionStrip: ActionStrip = ActionStrip.Builder()
-        .addAction(iconAction(R.drawable.ic_zoom_in) { zoomIn() })
-        .addAction(iconAction(R.drawable.ic_zoom_out) { zoomOut() })
-        .addAction(iconAction(R.drawable.ic_recenter) { recenter() })
-        .addAction(Action.Builder(Action.PAN).build())
-        .build()
+    // Map actions live on the canvas in the Drive stage. The host map strip was
+    // an always-on second copy over the rail, so it stole rail taps and kept
+    // zoom/pan buttons visible on every other stage.
 
     init {
         try {
@@ -341,10 +349,11 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
     }
 
     override fun onGetTemplate(): Template {
+        mapStageVisible = surfaceRenderer?.isMapStageVisible()
+            ?: (NavigationController.navState != NavState.IDLE)
         templateStamp = navStamp()
         val builder = NavigationTemplate.Builder()
-            .setActionStrip(actionStrip())
-            .setMapActionStrip(mapActionStrip)
+            .setActionStrip(actionStrip(mapStageVisible))
         applyHostGuidance(builder)
         return builder.build()
     }
@@ -431,7 +440,7 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
                 if (NavigationController.offRoute) {
                     builder.setNavigationInfo(
                         MessageInfo.Builder("Off the route")
-                            .setText("Tap Reroute for a new route from here")
+                            .setText("Rerouting automatically, or tap Reroute")
                             .build(),
                     )
                 } else {
@@ -488,7 +497,7 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
         when (NavigationController.navState) {
             NavState.ACTIVE -> {
                 if (NavigationController.offRoute) {
-                    publishAlert("off", "Off the route", "Reroute for a new route")
+                    publishAlert("off", "Off the route", "Rerouting automatically")
                     return
                 }
                 val step = NavigationController.steps.getOrNull(NavigationController.currentStepIndex)
@@ -606,7 +615,7 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
         }
     }
 
-    private fun actionStrip(): ActionStrip {
+    private fun actionStrip(mapVisible: Boolean): ActionStrip {
         val strip = ActionStrip.Builder()
         // Not parked-only: the host hides the SearchTemplate keyboard while
         // driving but still shows results and speech input. A parked gate
@@ -635,6 +644,10 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
             menuAction.setFlags(Action.FLAG_IS_PERSISTENT)
         }
         strip.addAction(menuAction.build())
+        // Heading, Reroute, Retry and End only make sense on the Drive stage.
+        // Showing them on Media, Comms or Home is what made the strip look
+        // permanently stuck and left actions that did nothing.
+        if (!mapVisible) return strip.build()
         val navState = NavigationController.navState
         if (NavigationController.offRoute) {
             strip.addAction(iconAction(R.drawable.ic_recalculate, "Reroute") {
@@ -663,6 +676,8 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
         }
         return strip.build()
     }
+
+    internal fun actionStripForTest(mapVisible: Boolean): ActionStrip = actionStrip(mapVisible)
 
     private fun openSearch() {
         OaLog.i(TAG, "Search action pressed")
@@ -695,21 +710,6 @@ class OmarchyScreen(carContext: CarContext) : Screen(carContext) {
         val builder = Action.Builder().setIcon(icon(resId)).setOnClickListener(onClick)
         if (title != null) builder.setTitle(title)
         return builder.build()
-    }
-
-    private fun zoomIn() {
-        MapCameraStore.zoomIn()
-        surfaceRenderer?.requestDraw()
-    }
-
-    private fun zoomOut() {
-        MapCameraStore.zoomOut()
-        surfaceRenderer?.requestDraw()
-    }
-
-    private fun recenter() {
-        MapCameraStore.recenter()
-        surfaceRenderer?.requestDraw()
     }
 
     companion object {

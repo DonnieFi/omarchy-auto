@@ -130,6 +130,18 @@ object MapCameraStore {
         LiveDataStore.notifyDisplayChanged()
     }
 
+    /** Pans the map relative to the current camera center and bearing. */
+    fun panByStep(dxPixels: Float, dyPixels: Float) {
+        val state = LiveDataStore.state
+        panByPixels(
+            dxPixels = dxPixels,
+            dyPixels = dyPixels,
+            baseLat = state.latitude,
+            baseLon = state.longitude,
+            bearingDeg = cameraBearing(state.bearing),
+        )
+    }
+
     fun focusOn(lat: Double, lon: Double, targetZoom: Double? = null) {
         panLat = lat.coerceIn(-85.0, 85.0)
         panLon = lon.coerceIn(-180.0, 180.0)

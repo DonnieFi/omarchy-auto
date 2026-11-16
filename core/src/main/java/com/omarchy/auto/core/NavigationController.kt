@@ -81,6 +81,15 @@ object NavigationController {
     const val MAX_ACCURACY_METERS = 100f
 
     /**
+     * Consecutive off-route fixes before the controller builds a fresh route
+     * from the current fix. Two fixes raise the warning; the third recovers.
+     * A cooldown stops a bad fix or a parallel road from rerouting in a loop.
+     */
+    const val AUTO_REROUTE_HITS = 3
+    const val AUTO_REROUTE_COOLDOWN_MS = 15_000L
+    const val OFF_ROUTE_STATUS = "OFF THE ROUTE"
+
+    /**
      * Polite gap between public geocoder and router calls. This used to sleep
      * 800 ms on the routing thread before every network request, which showed
      * up as search and route lag even on a fast link. Network time still
@@ -120,6 +129,7 @@ object NavigationController {
     private var autoDriveDistanceM: Double = 0.0
     private var autoDriveLastMs: Long = -1L
     private var offRouteHits: Int = 0
+    private var lastAutoRerouteAtMs: Long = 0L
     private var heldDurationSeconds: Double = -1.0
     private var heldDurationStep: Int = -1
 
@@ -196,6 +206,18 @@ object NavigationController {
     val routePoints: List<Pair<Double, Double>> get() = routeGeometry
     val steps: List<RouteStep> get() = routeSteps
     val nextStepDistanceMeters: Double get() = distanceToNextTurnMeters
+
+    val currentStep: RouteStep?
+        get() = routeSteps.getOrNull(currentStepIndex)
+
+    val nextStep: RouteStep?
+        get() = routeSteps.getOrNull(currentStepIndex + 1)
+
+    val canSkipStepForward: Boolean
+        get() = navState == NavState.ACTIVE && currentStepIndex < routeSteps.lastIndex
+
+    val canSkipStepBack: Boolean
+        get() = navState == NavState.ACTIVE && currentStepIndex > 0
 
     fun currentInstruction(): String? =
         if (destination != null || routingInFlight || navState != NavState.IDLE) {
@@ -307,32 +329,48 @@ object NavigationController {
         candidate: SearchCandidate,
         autoStartNav: Boolean = true,
         nowMs: Long = System.currentTimeMillis(),
+        preserveExistingOnPending: Boolean = false,
     ) {
         val token = routeGeneration.incrementAndGet()
+        if (candidate != destination) lastAutoRerouteAtMs = 0L
+        val keepExisting = preserveExistingOnPending &&
+            candidate == destination &&
+            routeGeometry.size >= 2 &&
+            routeSteps.isNotEmpty()
         destination = candidate
         searchResults = emptyList()
-        // Immediately clear any previous route geometry/steps so old routes never linger.
-        routeGeometry = emptyList()
-        routeSteps = emptyList()
-        currentStepIndex = 0
-        remainingDistanceMeters = 0.0
-        remainingDurationSeconds = 0.0
-        distanceToNextTurnMeters = 0.0
-        currentLegRemainingMeters = 0.0
-        active = false
+        if (!keepExisting) {
+            // Immediately clear any previous route geometry/steps so old routes never linger.
+            routeGeometry = emptyList()
+            routeSteps = emptyList()
+            currentStepIndex = 0
+            remainingDistanceMeters = 0.0
+            remainingDurationSeconds = 0.0
+            distanceToNextTurnMeters = 0.0
+            currentLegRemainingMeters = 0.0
+            active = false
+        }
 
         val origin = validGpsOrigin(nowMs)
         if (origin == null) {
             routingInFlight = false
-            navState = NavState.LOCATION_REQUIRED
-            statusMessage = "LOCATION REQUIRED · WAIT FOR GPS FIX"
+            if (!keepExisting) {
+                navState = NavState.LOCATION_REQUIRED
+                statusMessage = "LOCATION REQUIRED · WAIT FOR GPS FIX"
+            } else {
+                statusMessage = null
+            }
             LiveDataStore.notifyDisplayChanged()
             return
         }
 
         routingInFlight = true
-        navState = NavState.ROUTING
-        statusMessage = "ROUTING..."
+        if (!keepExisting) {
+            navState = NavState.ROUTING
+            statusMessage = "ROUTING..."
+        } else {
+            statusMessage = "REROUTING..."
+        }
         if (autoStartNav) {
             MapCameraStore.recenter()
         } else {
@@ -361,6 +399,12 @@ object NavigationController {
                 applyRoute(route, originLat, originLon)
                 active = autoStartNav
                 navState = if (autoStartNav) NavState.ACTIVE else NavState.PREVIEW
+                statusMessage = null
+            } else if (keepExisting) {
+                // Keep the existing fallback route active when a background
+                // reroute fails in poor coverage instead of dropping guidance.
+                active = true
+                navState = NavState.ACTIVE
                 statusMessage = null
             } else {
                 active = false
@@ -411,6 +455,17 @@ object NavigationController {
         }
     }
 
+    /** One decision point for the canvas Start/Stop button on phone and car. */
+    enum class PrimaryAction { REROUTE, RETRY, OPEN_SEARCH, TOGGLE }
+
+    fun primaryAction(): PrimaryAction = when {
+        offRoute -> PrimaryAction.REROUTE
+        navState == NavState.ROUTE_ERROR || navState == NavState.LOCATION_REQUIRED ->
+            PrimaryAction.RETRY
+        destination == null && !navActive -> PrimaryAction.OPEN_SEARCH
+        else -> PrimaryAction.TOGGLE
+    }
+
     fun stopNavigation() {
         routeGeneration.incrementAndGet()
         active = false
@@ -430,6 +485,7 @@ object NavigationController {
         autoDriveLastMs = -1L
         offRoute = false
         offRouteHits = 0
+        lastAutoRerouteAtMs = 0L
         heldDurationSeconds = -1.0
         heldDurationStep = -1
         LiveDataStore.notifyDisplayChanged()
@@ -484,13 +540,63 @@ object NavigationController {
     }
 
     /** Builds a new route from the current GPS fix to the same destination. */
-    fun recalculate() {
+    fun recalculate(nowMs: Long = System.currentTimeMillis()) {
         val dest = destination ?: return
+        lastAutoRerouteAtMs = nowMs
         offRoute = false
         offRouteHits = 0
         autoDriveDistanceM = 0.0
         autoDriveLastMs = -1L
-        selectDestination(dest, autoStartNav = true)
+        selectDestination(
+            dest,
+            autoStartNav = true,
+            nowMs = nowMs,
+            preserveExistingOnPending = true,
+        )
+    }
+
+    /**
+     * Manual hint recovery. Moves guidance to the next or previous leg without
+     * discarding the route, so a driver who has gone off the line can get past
+     * a stuck turn prompt. The next fix can advance the leg again normally.
+     */
+    fun skipStepForward() {
+        if (!canSkipStepForward) return
+        selectStep(currentStepIndex + 1)
+    }
+
+    fun skipStepBack() {
+        if (!canSkipStepBack) return
+        selectStep(currentStepIndex - 1)
+    }
+
+    /** Drops the off-route warning and cools down auto-reroute while keeping the route. */
+    fun dismissOffRoute(nowMs: Long = System.currentTimeMillis()) {
+        if (!offRoute && offRouteHits == 0) return
+        offRoute = false
+        offRouteHits = 0
+        lastAutoRerouteAtMs = nowMs
+        if (statusMessage == OFF_ROUTE_STATUS) statusMessage = null
+        LiveDataStore.notifyDisplayChanged()
+    }
+
+    private fun selectStep(index: Int) {
+        val steps = routeSteps
+        if (steps.isEmpty()) return
+        val clamped = index.coerceIn(0, steps.lastIndex)
+        currentStepIndex = clamped
+        val step = steps[clamped]
+        val legDistance = step.distanceMeters.coerceAtLeast(0.0)
+        currentLegRemainingMeters = legDistance
+        distanceToNextTurnMeters = legDistance
+        remainingDistanceMeters = steps.drop(clamped).sumOf { it.distanceMeters.coerceAtLeast(0.0) }
+        remainingDurationSeconds = steps.drop(clamped).sumOf { it.durationSeconds.coerceAtLeast(0.0) }
+        heldDurationSeconds = -1.0
+        heldDurationStep = -1
+        offRoute = false
+        offRouteHits = 0
+        if (statusMessage == OFF_ROUTE_STATUS) statusMessage = null
+        LiveDataStore.notifyDisplayChanged()
     }
 
     /**
@@ -540,14 +646,26 @@ object NavigationController {
             offRouteHits += 1
             if (offRouteHits >= 2 && !offRoute) {
                 offRoute = true
-                statusMessage = "OFF THE ROUTE"
+                statusMessage = OFF_ROUTE_STATUS
                 LiveDataStore.notifyDisplayChanged()
+            }
+            if (offRoute) {
+                // Recover instead of freezing the last prompt forever. The
+                // warning gets two fixes to clear on its own; the third starts
+                // a fresh route from the current fix, with a cooldown so a
+                // parallel road or a bad fix cannot loop the router.
+                val cooledDown = lastAutoRerouteAtMs == 0L ||
+                    updatedAtMs - lastAutoRerouteAtMs >= AUTO_REROUTE_COOLDOWN_MS
+                if (offRouteHits >= AUTO_REROUTE_HITS && cooledDown) {
+                    recalculate(updatedAtMs)
+                    return
+                }
             }
             if (offRoute) return
         } else if (offRouteHits != 0 || offRoute) {
             offRouteHits = 0
             offRoute = false
-            if (statusMessage == "OFF THE ROUTE") statusMessage = null
+            if (statusMessage == OFF_ROUTE_STATUS) statusMessage = null
         }
         val steps = routeSteps
         val dest = destination ?: return

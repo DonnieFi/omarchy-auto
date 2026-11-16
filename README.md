@@ -238,8 +238,9 @@ draws into `NavigationTemplate` through `AppManager.setSurfaceCallback`. The
 canvas is the Omarchy shell: themed wallpaper, title, footer, and the 4-tile
 right rail (`Drive / Media / Comms / Home`). The Drive tile fills the stage
 frame edge-to-edge with the map, route, vehicle marker, turn-by-turn guidance
-card, zoom/recenter controls, and OpenFreeMap / OSM credit, while live speed is
-displayed in the footer. Theme chips and the top-bar `THEME` button change the
+card, zoom/recenter controls, and OpenFreeMap / OSM credit. Live speed sits in
+the footer, and a larger speed box appears bottom-left only while the vehicle
+is moving. Theme chips and the top-bar `THEME` button change the
 palette on the canvas, and `SETUP · CAR & DISPLAY OPTIONS` inside the Home
 stage toggles map orientation, notification text size, and wallpaper mode.
 Media previous, play/pause, and next run from the Media tile. Search is a host
@@ -249,10 +250,14 @@ voice input and result rows still work while driving. The Comms tile displays
 notifications in-stage when stationary/parked and locks while moving. **Menu**
 on the action strip toggles the Home stage on the canvas rather than pushing a
 stock host list screen. A NAVIGATE/geo intent lands on the Drive map. The main
-strip is Search, Menu, and Heading while idle; End is added while a route is
-active, Reroute replaces Heading when off-route, and Retry replaces it on
-route/location errors. The map strip is icon-only: zoom in, zoom out, recenter,
-and pan. Video and the in-stage browser are not drawn on the car surface.
+strip is Search and Menu on every stage; the Drive stage adds Heading while
+idle, End while a route is active, Reroute when off-route, and Retry on
+route/location errors. Zoom, recenter and pan are canvas controls inside the
+Drive stage only; there is no host map strip, so those buttons no longer cover
+the rail or stay on Media, Comms and Home. The guidance card adds previous/next
+step buttons, and an off-route warning can be tapped away or recovers by
+rerouting automatically after three consecutive off-route fixes. Video and the
+in-stage browser are not drawn on the car surface.
 
 > **Sideloading caveat:** current Google documentation says the Android Auto
 > "Unknown sources" developer option applies to media, messaging, and parked
@@ -324,8 +329,8 @@ prototype for future Linux work.
 | Rotation | Portrait/landscape reflow verified on the S24 FE |
 | Media play/pause/previous/next | Phone launcher and the Android Auto Media tile, both via MediaTransport |
 | AA NavigationTemplate + SurfaceCallback | Themed shell on the map surface. 0.1.1 shell was seen on a Kia; this restoration has no new head-unit pass |
-| AA host cards and strips | Routing card, travel estimate, search (host keyboard parked-only, voice while driving), in-car hub with media/notifications/settings, map zoom/recenter/pan; unit-tested |
-| Turn-by-turn | Public OSRM demo, roundabout exit, lane arrows when OSM has them, off-route message until Recalculate, ETA held across small changes |
+| AA host cards and strips | Routing card, travel estimate, search (host keyboard parked-only, voice while driving), in-car hub with media/notifications/settings; canvas zoom/recenter/pan on Drive only; no host map strip; unit-tested |
+| Turn-by-turn | Public OSRM demo, roundabout exit, lane arrows when OSM has them, auto-reroute after three off-route fixes, previous/next step buttons, ETA held across small changes |
 | Real map | OpenFreeMap dark style via MapLibre snapshots on the phone Drive stage and the AA map surface, plus a live location puck |
 | Diagnostics | Opt-in crash queue + `SEND LOGS` share button in Setup |
 | Routing alpha | Separate Ferrostar + hosted Valhalla app; emulator replay/UI tests pass; live key/car validation pending |
@@ -382,12 +387,16 @@ prototype for future Linux work.
   search uses Photon, then Nominatim. A route sends the current fix and the
   destination to that demo. There is no toll exclusion and no posted speed
   limit. Lane arrows appear only when the response includes turn lanes.
-  Driving more than 40 m off the line for two fixes shows an off-route message
-  and waits for Recalculate. The displayed ETA holds until the step changes or
-  the estimate moves by about 30 seconds.
-- `NavigationTemplate` still requires an action strip. The strip is navigation
-  controls (search, stop, heading or recalculate, settings), not a theme
-  button. The map strip is icon-only.
+  Driving more than 40 m off the line for two fixes shows an off-route message;
+  a third consecutive fix rebuilds the route from the current position (15 s
+  cooldown). The warning can also be tapped away, and the guidance card has
+  previous/next step buttons. The displayed ETA holds until the step changes
+  or the estimate moves by about 30 seconds.
+- `NavigationTemplate` still requires an action strip. Search and Menu are
+  always present so the driver can never be stranded. Heading, Reroute/Retry
+  and End appear only while the canvas is on the Drive stage. Map zoom,
+  recenter and pan are canvas controls in that stage; there is no host map
+  action strip.
 - The routing alpha has not been validated with a live Stadia key, audible
   speech, real GPS, or a real Android Auto head unit. Its replay tests are not
   a claim of fresh routing quality.
