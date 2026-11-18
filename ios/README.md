@@ -86,6 +86,36 @@ backgrounds are private-demo assets until each source image is cleared
 rights are unclear, the iOS build uses the project's original code-drawn
 fallback artwork instead.
 
+## The app project (omarchy-h7w.6)
+
+The Xcode project is **generated, not committed**: the source of truth is
+[`project.yml`](project.yml), and `xcodegen` produces `ios/OmarchyAuto.xcodeproj`
+(CI pins XcodeGen 2.47.0 on the macOS runner; the generated project is
+gitignored). Layout:
+
+- `OmarchyAuto/App/` — SwiftUI sources: the mounted-dashboard shell
+  (wallpaper, title bar, four-tile rail, stage, footer) with Tokyo Night as
+  the single working theme; the remaining palettes join after device review.
+- `OmarchyAuto/Resources/tokyo-night.webp` — staged from the explicit public
+  asset list above (the cleared Tokyo Studio artwork).
+- `../design/omarchy-themes.json` — referenced directly by the app target, so
+  the bundle carries the exact bytes the Linux gate verifies. One source of
+  truth; no second copy exists.
+- `OmarchyAuto/Tests/` — hosted unit tests on the simulator: rail behavior,
+  bundle token decode (the path the app uses at runtime), palette projection,
+  wallpaper staging, and the honesty rules (unknown battery is `WAIT`, never
+  a fake number).
+
+```sh
+# Local Mac:
+xcodegen generate --spec ios/project.yml
+open OmarchyAuto.xcodeproj
+```
+
+The `app-shell` CI job (macOS runner) generates the project, runs the tests
+on an iPhone simulator, launches the app on iPhone and iPad simulators, and
+uploads portrait screenshots as downloadable artifacts.
+
 ## CI routing
 
 - [`android.yml`](../.github/workflows/android.yml) — unchanged: Linux, runs
@@ -99,7 +129,12 @@ fallback artwork instead.
 - The same workflow's `swift-tokens` job runs the SwiftPM token tests
   (`ios/DesignTokens`) on GitHub's `macos-26` runner — Xcode 26, no local
   Mac needed for the tokens surface.
-- The full macOS Xcode app job (build + tests of the Xcode project) joins
-  when the Xcode project lands, gated to `ios/**` and shared-input changes
-  so the expensive runner is not billed for Android-only work. Keep the
-  always-reporting Linux gate when that happens.
+- The `app-shell` job generates the Xcode project with XcodeGen, runs the
+  hosted unit tests on an iPhone simulator, and captures portrait screenshots
+  of the shell on iPhone and iPad simulators as downloadable artifacts.
+- Signed distribution (an installable archive, then TestFlight) joins the
+  macOS jobs when the owner's Apple Developer Program enrollment lands
+  (omarchy-h7w.4 / .13); unsigned CI builds are the ceiling until then. When
+  the macOS jobs grow, gate the expensive ones to `ios/**` and shared-input
+  changes so Android-only work is not billed — keep the always-reporting
+  Linux gate.

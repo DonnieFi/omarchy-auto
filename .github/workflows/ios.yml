@@ -12,15 +12,17 @@
 #     ios/DesignTokens SwiftPM package tests on GitHub's macos-26 runner
 #     (Xcode 26, the spike's toolchain per docs/planning/IOS-ROADMAP.md).
 #     No local Mac is required for the tokens surface.
-#   - The full Xcode app job (build + Swift tests) joins this workflow when
-#     the Xcode project lands under ios/. Gate it to ios/** and shared-input
-#     paths (ios/**, design/**, core/src/main/java/com/omarchy/auto/core/Theme.kt)
-#     so the expensive Mac runner is not billed for Android-only changes —
-#     but keep this always-reporting Linux job as the workflow's baseline.
+#   - App shell: the app-shell job below generates the Xcode project from
+#     ios/project.yml with XcodeGen (2.47.0), runs the hosted unit tests on
+#     an iPhone simulator, and uploads portrait screenshots of the shell on
+#     iPhone and iPad simulators. Signed distribution (installable archive,
+#     TestFlight) joins when the owner's Apple Developer Program enrollment
+#     lands (omarchy-h7w.4 / .13); unsigned CI builds are the ceiling until
+#     then.
 #   - Billing note: while this repository is public, arm64 macOS runners are
-#     free, so the always-on swift-tokens job is intended. If the repo goes
-#     private, macOS minutes bill at ~10x the Linux rate — gate swift-tokens
-#     (and any later app job) by changed paths at that point.
+#     free, so the always-on macOS jobs are intended. If the repo goes
+#     private, macOS minutes bill at ~10x the Linux rate — gate the macOS
+#     jobs by changed paths at that point.
 
 name: iOS & Shared
 
@@ -82,3 +84,76 @@ jobs:
 
       - name: Swift package tests (decode the committed design tokens)
         run: swift test --package-path ios/DesignTokens
+
+  app-shell:
+    name: App shell (macOS, Xcode 26)
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Require the Xcode 26 toolchain
+        run: |
+          v=$(xcodebuild -version | head -1)
+          echo "$v"
+          case "$v" in
+            Xcode\ 26*) ;;
+            *) echo "::error::The macos-26 image's default toolchain is no longer Xcode 26 (found: $v). Pin or update the job." ; exit 1 ;;
+          esac
+
+      - name: Install XcodeGen 2.47.0
+        run: |
+          curl -fsSL -o /tmp/xcodegen.zip \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/2.47.0/xcodegen.zip"
+          unzip -qo /tmp/xcodegen.zip -d /tmp/xcodegen-dist
+          sudo mkdir -p /usr/local/bin
+          sudo cp -R /tmp/xcodegen-dist/xcodegen/bin/xcodegen /usr/local/bin/xcodegen
+          xcodegen --version
+
+      - name: Generate the Xcode project
+        run: xcodegen generate --spec ios/project.yml
+
+      - name: Pick available simulators
+        id: sims
+        run: |
+          pick() {
+            xcrun simctl list devices available \
+              | sed -nE "s/^ *($1 [^(]*) \([^)]*\) \(([0-9a-fA-F-]{36})\).*/\2/p" \
+              | head -1
+          }
+          IPHONE=$(pick "iPhone")
+          IPAD=$(pick "iPad")
+          echo "iphone=$IPHONE" >> "$GITHUB_OUTPUT"
+          echo "ipad=$IPAD" >> "$GITHUB_OUTPUT"
+          test -n "$IPHONE"
+          test -n "$IPAD"
+
+      - name: Build and run the hosted unit tests (iPhone simulator)
+        run: |
+          xcodebuild -project ios/OmarchyAuto.xcodeproj \
+            -scheme OmarchyAuto \
+            -destination "platform=iOS Simulator,id=${{ steps.sims.outputs.iphone }}" \
+            -derivedDataPath ios/build \
+            test -quiet
+
+      - name: Launch the shell on both simulators (portrait screenshots)
+        run: |
+          shot() {
+            udid="$1"; out="$2"
+            xcrun simctl bootstatus "$udid" -b
+            xcrun simctl install "$udid" ios/build/Build/Products/Debug-iphonesimulator/OmarchyAuto.app
+            xcrun simctl launch "$udid" com.omarchy.auto.ios
+            sleep 6
+            xcrun simctl io "$udid" screenshot "$out"
+            xcrun simctl shutdown "$udid" || true
+          }
+          shot "${{ steps.sims.outputs.iphone }}" OmarchyAuto-iphone-portrait.png
+          shot "${{ steps.sims.outputs.ipad }}" OmarchyAuto-ipad-portrait.png
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: omarchy-auto-ios-shell
+          path: |
+            OmarchyAuto-iphone-portrait.png
+            OmarchyAuto-ipad-portrait.png
+          if-no-files-found: error

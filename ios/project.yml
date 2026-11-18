@@ -1,0 +1,73 @@
+# XcodeGen spec for the Omarchy Auto iOS app (bead omarchy-h7w.6, ADR-0017).
+#
+# The .xcodeproj is GENERATED from this file and is not committed. Generate it
+# with XcodeGen (https://github.com/yonaskolb/XcodeGen, pinned 2.47.0 in CI):
+#
+#   xcodegen generate --spec ios/project.yml
+#
+# CI does exactly that on the macOS runner before xcodebuild (see
+# .github/workflows/ios.yml). The canonical design tokens at
+# ../design/omarchy-themes.json are referenced directly as a resource so the
+# app bundle always carries the same bytes the Linux gate verifies against
+# Theme.kt — no second copy of the tokens file exists.
+
+name: OmarchyAuto
+options:
+  bundleIdPrefix: com.omarchy.auto
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "26.0"
+
+packages:
+  DesignTokens:
+    path: DesignTokens
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+
+targets:
+  OmarchyAuto:
+    type: application
+    platform: iOS
+    sources:
+      - path: OmarchyAuto/App
+      - path: OmarchyAuto/Resources
+        buildPhase: resources
+      # Single source of truth: the canonical tokens file, one directory up.
+      - path: ../design/omarchy-themes.json
+        buildPhase: resources
+    dependencies:
+      - package: DesignTokens
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.omarchy.auto.ios
+        PRODUCT_NAME: OmarchyAuto
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: true
+        INFOPLIST_KEY_UILaunchScreen_Generation: true
+        INFOPLIST_KEY_UIStatusBarStyle: UIStatusBarStyleLightContent
+        INFOPLIST_KEY_UIRequiresFullScreen: true
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: false
+
+  OmarchyAutoTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: OmarchyAuto/Tests
+    dependencies:
+      - target: OmarchyAuto
+
+schemes:
+  OmarchyAuto:
+    build:
+      targets:
+        OmarchyAuto: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - OmarchyAutoTests

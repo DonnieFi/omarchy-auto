@@ -52,6 +52,32 @@ public struct ThemeToken: Codable, Equatable {
             Int(value & 0xFF)
         )
     }
+
+    /// Public memberwise initializer so consumers (tests, fallbacks) can
+    /// construct tokens directly; the app normally decodes them instead.
+    public init(
+        id: String, name: String, shortName: String,
+        background: String, surface: String, surfaceAlt: String,
+        foreground: String, dim: String, border: String,
+        accent: String, green: String, yellow: String, red: String,
+        scrimAlpha: Int, stageAlpha: Int
+    ) {
+        self.id = id
+        self.name = name
+        self.shortName = shortName
+        self.background = background
+        self.surface = surface
+        self.surfaceAlt = surfaceAlt
+        self.foreground = foreground
+        self.dim = dim
+        self.border = border
+        self.accent = accent
+        self.green = green
+        self.yellow = yellow
+        self.red = red
+        self.scrimAlpha = scrimAlpha
+        self.stageAlpha = stageAlpha
+    }
 }
 
 /// Root object of design/omarchy-themes.json.
