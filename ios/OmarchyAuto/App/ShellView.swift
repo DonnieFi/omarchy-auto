@@ -11,6 +11,20 @@ struct ShellView: View {
 
     init() {
         _theme = State(initialValue: ShellTheme.tokyoNight())
+        _shell = State(
+            initialValue: ShellModel(engaged: Self.engagedStage(from: ProcessInfo.processInfo.arguments))
+        )
+    }
+
+    /// CI screenshot hook: `-engageStage drive` pre-engages a stage so the
+    /// runner can capture both the idle wallpaper view and an engaged stage
+    /// without scripting taps.
+    static func engagedStage(from arguments: [String]) -> TileID? {
+        guard let index = arguments.firstIndex(of: "-engageStage"),
+              index + 1 < arguments.count,
+              let tile = TileID(rawValue: arguments[index + 1])
+        else { return nil }
+        return tile
     }
 
     var body: some View {

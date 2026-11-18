@@ -89,4 +89,23 @@ final class ShellTests: XCTestCase {
         let date = Calendar.current.date(from: components)!
         XCTAssertEqual(ShellView.clockText(date), "09:05")
     }
+
+    // MARK: CI screenshot hook
+
+    func testEngagedStageLaunchArgument() {
+        XCTAssertNil(ShellView.engagedStage(from: []))
+        XCTAssertNil(ShellView.engagedStage(from: ["-engageStage"]), "missing value is ignored")
+        XCTAssertNil(
+            ShellView.engagedStage(from: ["-engageStage", "bogus"]),
+            "unknown tile ids are ignored"
+        )
+        XCTAssertEqual(
+            ShellView.engagedStage(from: ["/path/app", "-engageStage", "drive"]),
+            .drive
+        )
+        XCTAssertEqual(
+            ShellView.engagedStage(from: ["-engageStage", "home"]),
+            .home
+        )
+    }
 }
