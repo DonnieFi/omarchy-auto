@@ -56,3 +56,12 @@ tasks.register("verifyPublicReleaseAssets") {
         logger.lifecycle("Public asset guard passes: no local-assets entries in release archives.")
     }
 }
+
+tasks.register("exportDesignTokens") {
+    group = "verification"
+    description =
+        "Verify (or regenerate) design/omarchy-themes.json from Theme.kt. " +
+            "The export is deterministic: repeat runs produce identical bytes. " +
+            "Pass -Pomarchy.updateDesignTokens=true to rewrite the file after a theme change."
+    dependsOn(":core:testDebugUnitTest")
+}

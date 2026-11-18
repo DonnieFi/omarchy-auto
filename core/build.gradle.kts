@@ -22,3 +22,12 @@ dependencies {
     implementation("androidx.annotation:annotation:1.11.0")
     implementation("org.maplibre.gl:android-sdk:13.6.1")
 }
+
+tasks.withType<Test>().configureEach {
+    // DesignTokensTest locates design/omarchy-themes.json from the repo root and
+    // rewrites it when -Pomarchy.updateDesignTokens=true is present.
+    systemProperty("omarchy.repo.root", rootProject.projectDir.absolutePath)
+    if (project.hasProperty("omarchy.updateDesignTokens")) {
+        systemProperty("omarchy.updateDesignTokens", project.property("omarchy.updateDesignTokens").toString())
+    }
+}
