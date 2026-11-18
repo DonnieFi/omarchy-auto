@@ -129,12 +129,28 @@ jobs:
           test -n "$IPAD"
 
       - name: Build and run the hosted unit tests (iPhone simulator)
+        shell: bash
         run: |
+          set -o pipefail
           xcodebuild -project ios/OmarchyAuto.xcodeproj \
             -scheme OmarchyAuto \
             -destination "platform=iOS Simulator,id=${{ steps.sims.outputs.iphone }}" \
             -derivedDataPath ios/build \
-            test -quiet
+            test > /tmp/build.log 2>&1
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            {
+              echo "## xcodebuild failure (exit $rc)"
+              echo '```'
+              grep -E "error:|BUILD FAILED|TEST FAILED|Testing failed" -A 3 /tmp/build.log | head -80
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            grep -E "error:" /tmp/build.log | head -12 | while IFS= read -r line; do
+              echo "::error::${line:0:480}"
+            done
+            tail -n 40 /tmp/build.log
+            exit "$rc"
+          fi
 
       - name: Launch the shell on both simulators (portrait screenshots)
         run: |
