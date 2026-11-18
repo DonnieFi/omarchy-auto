@@ -46,14 +46,18 @@ decode-and-compare of every theme id, name, color and alpha both run there
 
 ### Swift decoding contract
 
-[`Sources/ThemeTokens.swift`](Sources/ThemeTokens.swift) is the staged,
-dependency-free Foundation decoder for the tokens file. **It is not compiled
-in this repository's CI** — there is no Mac toolchain here. The first Xcode
-session compiles it, adds it to the app/widget targets, and adds the
-decode unit test: decode all ten themes and assert a known value
-(tokyo-night `background == "#FF1A1B26"`, `scrimAlpha == 89`). That
-Xcode-side verification is the recorded remainder of the topology bead
-(`omarchy-h7w.5`).
+[`DesignTokens/Sources/ThemeTokens/ThemeTokens.swift`](DesignTokens/Sources/ThemeTokens/ThemeTokens.swift)
+is the dependency-free Foundation decoder for the tokens file, packaged as
+the local SwiftPM package [`DesignTokens`](DesignTokens). **CI compiles and
+unit-tests it on GitHub's `macos-26` runner (Xcode 26)** in the
+[iOS & Shared workflow](../.github/workflows/ios.yml): all ten themes
+decode from the committed `design/omarchy-themes.json`, tokyo-night asserts
+`background == "#FF1A1B26"` and `scrimAlpha == 89`, every color parses with
+full opacity, and bad colors/alphas are rejected. A local Mac is therefore
+not required for the tokens surface. The app and widget targets pick the
+package up when the Xcode project lands (beads `omarchy-h7w.6` / `.3`);
+a local Mac is still needed for interactive app development, per the
+[roadmap](../docs/planning/IOS-ROADMAP.md) prerequisites.
 
 ## Shared assets — explicit public staging list
 
@@ -92,7 +96,10 @@ fallback artwork instead.
   against `Theme.kt` and proves regeneration is a byte-identical no-op diff.
   Cheap, Linux, always reporting so a required check never pends when only
   one platform changes.
-- The macOS Xcode job (build + tests on a Mac runner) joins `ios.yml` when
-  the Xcode project lands, gated to `ios/**` and shared-input changes so the
-  expensive runner is not billed for Android-only work. Keep the
+- The same workflow's `swift-tokens` job runs the SwiftPM token tests
+  (`ios/DesignTokens`) on GitHub's `macos-26` runner — Xcode 26, no local
+  Mac needed for the tokens surface.
+- The full macOS Xcode app job (build + tests of the Xcode project) joins
+  when the Xcode project lands, gated to `ios/**` and shared-input changes
+  so the expensive runner is not billed for Android-only work. Keep the
   always-reporting Linux gate when that happens.

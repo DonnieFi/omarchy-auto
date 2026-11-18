@@ -8,9 +8,13 @@
 #     change on either platform can never leave the tokens stale. It always
 #     reports, keeping any required check from pending on single-platform
 #     changes.
-#   - The macOS Xcode job (build + Swift tests) joins this workflow when the
-#     Xcode project lands under ios/. Gate it to ios/** and shared-input paths
-#     (ios/**, design/**, core/src/main/java/com/omarchy/auto/core/Theme.kt)
+#   - Swift decode contract: the swift-tokens job below runs the
+#     ios/DesignTokens SwiftPM package tests on GitHub's macos-26 runner
+#     (Xcode 26, the spike's toolchain per docs/planning/IOS-ROADMAP.md).
+#     No local Mac is required for the tokens surface.
+#   - The full Xcode app job (build + Swift tests) joins this workflow when
+#     the Xcode project lands under ios/. Gate it to ios/** and shared-input
+#     paths (ios/**, design/**, core/src/main/java/com/omarchy/auto/core/Theme.kt)
 #     so the expensive Mac runner is not billed for Android-only changes —
 #     but keep this always-reporting Linux job as the workflow's baseline.
 
@@ -55,3 +59,13 @@ jobs:
         run: |
           ./gradlew :core:testDebugUnitTest --no-daemon -Pomarchy.updateDesignTokens=true
           git diff --exit-code -- design/omarchy-themes.json
+
+  swift-tokens:
+    name: Swift tokens (macOS, Xcode 26)
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Swift package tests (decode the committed design tokens)
+        run: swift test --package-path ios/DesignTokens

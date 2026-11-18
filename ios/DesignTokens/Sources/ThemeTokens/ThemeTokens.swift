@@ -7,11 +7,11 @@
 //  ./gradlew exportDesignTokens -Pomarchy.updateDesignTokens=true and is
 //  byte-stable, so it can be vendored as a bundle resource.
 //
-//  Status: staged contract — not compiled by this repository's CI (no Mac
-//  toolchain in the Linux environment). The first Xcode session adds it to
-//  the app and widget targets and adds the decode unit test: all ten themes
-//  decode, and tokyo-night asserts background == "#FF1A1B26" and
-//  scrimAlpha == 89.
+//  Status: compiled and unit-tested by CI on GitHub's macos-26 runner
+//  (Xcode 26) — no local Mac required for the tokens package; see
+//  ThemeTokensTests for the decode assertions. The app and widget targets
+//  bundle omarchy-themes.json when the Xcode project lands (beads
+//  omarchy-h7w.6 / .3) and consume this package as their decoding contract.
 //
 
 import Foundation
