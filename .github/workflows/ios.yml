@@ -1,0 +1,57 @@
+# iOS edition CI (ADR-0017: one repo, two toolchains).
+#
+# Routing contract:
+#   - Android checks: android.yml (Linux, every push/PR) — unchanged.
+#   - Shared-input gate: this workflow's design-tokens job (Linux, every
+#     push/PR). It verifies the committed design/omarchy-themes.json against
+#     Theme.kt and proves regeneration is a byte-identical no-op, so a
+#     change on either platform can never leave the tokens stale. It always
+#     reports, keeping any required check from pending on single-platform
+#     changes.
+#   - The macOS Xcode job (build + Swift tests) joins this workflow when the
+#     Xcode project lands under ios/. Gate it to ios/** and shared-input paths
+#     (ios/**, design/**, core/src/main/java/com/omarchy/auto/core/Theme.kt)
+#     so the expensive Mac runner is not billed for Android-only changes —
+#     but keep this always-reporting Linux job as the workflow's baseline.
+
+name: iOS & Shared
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  design-tokens:
+    name: Shared design tokens
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Configure Android SDK
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$SDK_ROOT/platform-tools:$PATH"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install "platforms;android-37.0" "build-tools;37.0.0"
+
+      - name: Verify committed tokens match Theme.kt
+        run: ./gradlew :core:testDebugUnitTest --no-daemon
+
+      - name: Verify regeneration is deterministic (rewrite leaves no diff)
+        run: |
+          ./gradlew :core:testDebugUnitTest --no-daemon -Pomarchy.updateDesignTokens=true
+          git diff --exit-code -- design/omarchy-themes.json
