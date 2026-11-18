@@ -181,5 +181,6 @@ struct RailTileView: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("rail-\(tile.rawValue)")
     }
 }
