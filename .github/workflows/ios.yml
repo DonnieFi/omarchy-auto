@@ -17,6 +17,10 @@
 #     paths (ios/**, design/**, core/src/main/java/com/omarchy/auto/core/Theme.kt)
 #     so the expensive Mac runner is not billed for Android-only changes —
 #     but keep this always-reporting Linux job as the workflow's baseline.
+#   - Billing note: while this repository is public, arm64 macOS runners are
+#     free, so the always-on swift-tokens job is intended. If the repo goes
+#     private, macOS minutes bill at ~10x the Linux rate — gate swift-tokens
+#     (and any later app job) by changed paths at that point.
 
 name: iOS & Shared
 
@@ -66,6 +70,15 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+
+      - name: Require the Xcode 26 toolchain
+        run: |
+          v=$(xcodebuild -version | head -1)
+          echo "$v"
+          case "$v" in
+            Xcode\ 26*) ;;
+            *) echo "::error::The macos-26 image's default toolchain is no longer Xcode 26 (found: $v). Pin or update the job." ; exit 1 ;;
+          esac
 
       - name: Swift package tests (decode the committed design tokens)
         run: swift test --package-path ios/DesignTokens
