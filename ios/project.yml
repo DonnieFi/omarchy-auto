@@ -62,6 +62,10 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.omarchy.auto.ios
         PRODUCT_NAME: OmarchyAuto
+        # Hosted unit tests @testable import the app module; Xcode's
+        # templates set DEFINES_MODULE on app targets, XcodeGen's presets
+        # do not — without it no OmarchyAuto.swiftmodule is emitted.
+        DEFINES_MODULE: "YES"
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1,2"

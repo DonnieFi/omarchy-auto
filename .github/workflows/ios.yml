@@ -179,7 +179,7 @@ jobs:
           test_on iphone "${{ steps.sims.outputs.iphone }}"
           test_on ipad "${{ steps.sims.outputs.ipad }}"
 
-      - name: Retain raw test evidence (log and xcresult, even on failure)
+      - name: Retain raw test evidence (log, xcresult, project — even on failure)
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -191,6 +191,7 @@ jobs:
             /tmp/summary-ipad.json
             /tmp/test-iphone.xcresult
             /tmp/test-ipad.xcresult
+            ios/OmarchyAuto.xcodeproj/project.pbxproj
           if-no-files-found: ignore
 
       - name: Capture the shell on both simulators (idle and engaged Drive)
