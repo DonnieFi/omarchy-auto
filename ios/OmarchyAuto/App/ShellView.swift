@@ -54,17 +54,26 @@ struct ShellView: View {
 
     /// Tom Ballard's Tokyo Studio image — the one cleared background
     /// (ADR-0013). If it is missing, a flat theme color shows instead; no
-    /// fake art is ever drawn (ADR-0009).
+    /// fake art is ever drawn (ADR-0009). The image is proposed the exact
+    /// screen size and clipped — scaledToFill alone expands the layout
+    /// bounds and pushed the shell's rail off-screen (caught by the UI
+    /// test: the rail button rect sat at x≈959 on a ~400pt iPhone).
     @ViewBuilder
     private var wallpaper: some View {
-        if let url = Bundle.main.url(forResource: "tokyo-night", withExtension: "webp"),
-           let image = UIImage(contentsOfFile: url.path) {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFill()
-        } else {
-            theme.background
+        GeometryReader { geo in
+            if let url = Bundle.main.url(forResource: "tokyo-night", withExtension: "webp"),
+               let image = UIImage(contentsOfFile: url.path) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .clipped()
+            } else {
+                theme.background
+                    .frame(width: geo.size.width, height: geo.size.height)
+            }
         }
+        .ignoresSafeArea()
     }
 
     // MARK: Title bar
