@@ -75,7 +75,10 @@ targets:
       - target: OmarchyAuto
     settings:
       base:
+        PRODUCT_NAME: OmarchyAutoTests
         GENERATE_INFOPLIST_FILE: "YES"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/OmarchyAuto.app/OmarchyAuto"
+        BUNDLE_LOADER: "$(TEST_HOST)"
 
   OmarchyAutoUITests:
     type: bundle.ui-testing
@@ -86,6 +89,7 @@ targets:
       - target: OmarchyAuto
     settings:
       base:
+        PRODUCT_NAME: OmarchyAutoUITests
         TEST_TARGET_NAME: OmarchyAuto
         GENERATE_INFOPLIST_FILE: "YES"
 
