@@ -39,6 +39,7 @@ targets:
         buildPhase: resources
     dependencies:
       - package: DesignTokens
+        product: ThemeTokens
     info:
       path: OmarchyAuto/App/Info.plist
       properties:
@@ -72,6 +73,9 @@ targets:
       - path: OmarchyAuto/Tests
     dependencies:
       - target: OmarchyAuto
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: "YES"
 
   OmarchyAutoUITests:
     type: bundle.ui-testing
@@ -83,6 +87,7 @@ targets:
     settings:
       base:
         TEST_TARGET_NAME: OmarchyAuto
+        GENERATE_INFOPLIST_FILE: "YES"
 
 schemes:
   OmarchyAuto:
