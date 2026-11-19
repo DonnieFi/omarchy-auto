@@ -213,19 +213,27 @@ jobs:
             ios/OmarchyAuto.xcodeproj/project.pbxproj
           if-no-files-found: ignore
 
-      - name: Capture the shell on both simulators (idle and engaged Drive)
+      - name: Capture the shell on both simulators (portrait and landscape)
         run: |
           shot() {
             udid="$1"; prefix="$2"
             xcrun simctl bootstatus "$udid" -b
             xcrun simctl install "$udid" ios/build/Build/Products/Debug-iphonesimulator/OmarchyAuto.app
+            xcrun simctl ui "$udid" orientation portrait
             xcrun simctl launch "$udid" com.omarchy.auto.ios
             sleep 6
-            xcrun simctl io "$udid" screenshot "${prefix}-idle.png"
+            xcrun simctl io "$udid" screenshot "${prefix}-portrait-idle.png"
+            xcrun simctl ui "$udid" orientation left
+            sleep 4
+            xcrun simctl io "$udid" screenshot "${prefix}-landscape-idle.png"
             xcrun simctl terminate "$udid" com.omarchy.auto.ios || true
+            xcrun simctl ui "$udid" orientation portrait
             xcrun simctl launch "$udid" com.omarchy.auto.ios -engageStage drive
             sleep 4
-            xcrun simctl io "$udid" screenshot "${prefix}-drive.png"
+            xcrun simctl io "$udid" screenshot "${prefix}-portrait-drive.png"
+            xcrun simctl ui "$udid" orientation left
+            sleep 4
+            xcrun simctl io "$udid" screenshot "${prefix}-landscape-drive.png"
             xcrun simctl shutdown "$udid" || true
           }
           shot "${{ steps.sims.outputs.iphone }}" OmarchyAuto-iphone
@@ -235,8 +243,12 @@ jobs:
         with:
           name: omarchy-auto-ios-shell
           path: |
-            OmarchyAuto-iphone-idle.png
-            OmarchyAuto-iphone-drive.png
-            OmarchyAuto-ipad-idle.png
-            OmarchyAuto-ipad-drive.png
+            OmarchyAuto-iphone-portrait-idle.png
+            OmarchyAuto-iphone-landscape-idle.png
+            OmarchyAuto-iphone-portrait-drive.png
+            OmarchyAuto-iphone-landscape-drive.png
+            OmarchyAuto-ipad-portrait-idle.png
+            OmarchyAuto-ipad-landscape-idle.png
+            OmarchyAuto-ipad-portrait-drive.png
+            OmarchyAuto-ipad-landscape-drive.png
           if-no-files-found: error

@@ -1,5 +1,27 @@
 import SwiftUI
 
+/// Proportional geometry ported from the Android TileRenderer (the Omarchy
+/// visual grammar this bead must preserve): rail width 104u capped at 23% of
+/// the screen width and floored at 74u, tile height 84u clamped to fit the
+/// available rail height, gap 10u, margin 14u. The unit anchors to the SHORT
+/// screen edge so the rail keeps its size in landscape — the mounted use.
+struct ShellMetrics {
+    let width: CGFloat
+    let height: CGFloat
+
+    var unit: CGFloat { min(width, height) / 720 }
+    var margin: CGFloat { 14 * unit }
+    var gap: CGFloat { 10 * unit }
+    var railWidth: CGFloat {
+        max(min(104 * unit, width * 0.23), 74 * unit)
+    }
+
+    func tileHeight(count: Int, railHeight: CGFloat) -> CGFloat {
+        let fit = (railHeight - gap * CGFloat(count - 1)) / CGFloat(count)
+        return min(84 * unit, fit)
+    }
+}
+
 /// The Omarchy mounted dashboard: wallpaper, title bar, right rail of four
 /// small tiles, one large stage, live footer. The visual grammar follows the
 /// Android shell (ADR-0003/0010/0015): 2px borders, monospace legends,
@@ -28,25 +50,31 @@ struct ShellView: View {
     }
 
     var body: some View {
-        ZStack {
-            wallpaper
-            Rectangle()
-                .fill(theme.background)
-                .opacity(theme.scrimOpacity)
-            VStack(spacing: 8) {
-                titleBar
-                HStack(spacing: 8) {
-                    stage
-                    rail
+        GeometryReader { geo in
+            let metrics = ShellMetrics(width: geo.size.width, height: geo.size.height)
+            ZStack {
+                wallpaper(geo)
+                Rectangle()
+                    .fill(theme.background)
+                    .opacity(theme.scrimOpacity)
+                VStack(spacing: metrics.gap) {
+                    titleBar
+                    GeometryReader { row in
+                        HStack(spacing: metrics.gap) {
+                            stage
+                            rail(metrics: metrics, rowHeight: row.size.height)
+                        }
+                    }
+                    .frame(maxHeight: .infinity)
+                    footer
                 }
-                footer
+                .padding(metrics.margin)
             }
-            .padding(8)
-        }
-        .ignoresSafeArea()
-        .onAppear {
-            UIDevice.current.isBatteryMonitoringEnabled = true
-            battery = Self.batteryText(level: UIDevice.current.batteryLevel)
+            .ignoresSafeArea()
+            .onAppear {
+                UIDevice.current.isBatteryMonitoringEnabled = true
+                battery = Self.batteryText(level: UIDevice.current.batteryLevel)
+            }
         }
     }
 
@@ -59,21 +87,18 @@ struct ShellView: View {
     /// bounds and pushed the shell's rail off-screen (caught by the UI
     /// test: the rail button rect sat at x≈959 on a ~400pt iPhone).
     @ViewBuilder
-    private var wallpaper: some View {
-        GeometryReader { geo in
-            if let url = Bundle.main.url(forResource: "tokyo-night", withExtension: "webp"),
-               let image = UIImage(contentsOfFile: url.path) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: geo.size.width, height: geo.size.height)
-                    .clipped()
-            } else {
-                theme.background
-                    .frame(width: geo.size.width, height: geo.size.height)
-            }
+    private func wallpaper(_ geo: GeometryProxy) -> some View {
+        if let url = Bundle.main.url(forResource: "tokyo-night", withExtension: "webp"),
+           let image = UIImage(contentsOfFile: url.path) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: geo.size.width, height: geo.size.height)
+                .clipped()
+        } else {
+            theme.background
+                .frame(width: geo.size.width, height: geo.size.height)
         }
-        .ignoresSafeArea()
     }
 
     // MARK: Title bar
@@ -124,20 +149,26 @@ struct ShellView: View {
 
     // MARK: Rail
 
-    private var rail: some View {
-        VStack(spacing: 8) {
+    private func rail(metrics: ShellMetrics, rowHeight: CGFloat) -> some View {
+        let tileHeight = metrics.tileHeight(
+            count: TileID.allCases.count,
+            railHeight: rowHeight
+        )
+        return VStack(spacing: metrics.gap) {
             ForEach(TileID.allCases) { tile in
                 RailTileView(
                     tile: tile,
                     engaged: shell.engaged == tile,
-                    theme: theme
+                    theme: theme,
+                    metrics: metrics,
+                    tileHeight: tileHeight
                 ) {
                     shell.tap(tile)
                 }
             }
             Spacer(minLength: 0)
         }
-        .frame(width: 96)
+        .frame(width: metrics.railWidth)
     }
 
     // MARK: Footer
@@ -174,26 +205,30 @@ struct ShellView: View {
 }
 
 /// One small rail tile: cut-out legend on top, tile name at the bottom,
-/// 2px border, accent when engaged.
+/// 2px border, accent when engaged. Geometry follows the Android
+/// TileRenderer: 104u wide by 84u tall (slightly wide, square-ish), fonts
+/// scaled with the same unit.
 struct RailTileView: View {
     let tile: TileID
     let engaged: Bool
     let theme: ShellTheme
+    let metrics: ShellMetrics
+    let tileHeight: CGFloat
     let onTap: () -> Void
 
     var body: some View {
         Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: metrics.gap * 0.4) {
                 Text(tile.legend)
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 9 * metrics.unit, weight: .semibold, design: .monospaced))
                     .foregroundColor(engaged ? theme.accent : theme.dim)
                 Spacer(minLength: 0)
                 Text(tile.rawValue.uppercased())
-                    .font(.system(size: 14, weight: .bold, design: .monospaced))
+                    .font(.system(size: 14 * metrics.unit, weight: .bold, design: .monospaced))
                     .foregroundColor(engaged ? theme.foreground : theme.dim)
             }
-            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-            .padding(6)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .padding(metrics.gap * 0.6)
             .background(
                 Rectangle()
                     .fill(engaged ? theme.surfaceAlt.opacity(0.9) : theme.surface.opacity(theme.stageOpacity))
@@ -204,6 +239,7 @@ struct RailTileView: View {
             )
         }
         .buttonStyle(.plain)
+        .frame(height: tileHeight)
         .accessibilityIdentifier("rail-\(tile.rawValue)")
     }
 }
