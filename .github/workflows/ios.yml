@@ -167,6 +167,11 @@ jobs:
               grep -E "error:|Testing failed:|Failing tests:|Fatal error|Assertion Failure|failed \(" "/tmp/build-$label.log" | head -12 | while IFS= read -r line; do
                 echo "::error::[$label] ${line:0:460}"
               done
+              # Context around the first module-resolution failure, which
+              # never names its search paths in the one-line annotations.
+              grep -B 4 -A 8 "compatible module" "/tmp/build-$label.log" | head -40 | while IFS= read -r line; do
+                echo "::error::[$label][ctx] ${line:0:460}"
+              done
               python3 -c "import json;d=json.load(open('/tmp/summary-$label.json'));[print('::error::[$label] FAILED TEST:',(t.get('testName') or '?'),':',(t.get('failureText') or '')[:280]) for t in d.get('testFailures',[])[:8]]" 2>/dev/null || true
               if ! grep -qE "error:|Testing failed|Failing tests|Fatal error|failed \(" "/tmp/build-$label.log"; then
                 tail -n 20 "/tmp/build-$label.log" | while IFS= read -r line; do

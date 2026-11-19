@@ -77,6 +77,9 @@ targets:
       - path: OmarchyAuto/Tests
     dependencies:
       - target: OmarchyAuto
+      # ShellTests imports ThemeTokens directly; the link belongs here too.
+      - package: DesignTokens
+        product: ThemeTokens
     settings:
       base:
         PRODUCT_NAME: OmarchyAutoTests
