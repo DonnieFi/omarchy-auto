@@ -134,17 +134,20 @@ jobs:
         id: tests
         shell: bash
         run: |
+          # GitHub runs this script with -eo pipefail; handle xcodebuild's
+          # exit status manually so the failure branch always executes.
+          set +e
           set -o pipefail
           test_on() {
             label="$1"; udid="$2"
             rm -rf "/tmp/test-$label.xcresult"
+            rc=0
             xcodebuild -project ios/OmarchyAuto.xcodeproj \
               -scheme OmarchyAuto \
               -destination "platform=iOS Simulator,id=$udid" \
               -derivedDataPath ios/build \
               -resultBundlePath "/tmp/test-$label.xcresult" \
-              test > "/tmp/build-$label.log" 2>&1
-            rc=$?
+              test > "/tmp/build-$label.log" 2>&1 || rc=$?
             if [ "$rc" -ne 0 ]; then
               # Structured test summary straight from the result bundle.
               xcrun xcresulttool get test-results summary \
