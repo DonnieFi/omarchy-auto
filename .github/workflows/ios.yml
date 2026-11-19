@@ -115,6 +115,20 @@ jobs:
           xcodegen generate --spec ios/project.yml
           xcodebuild -list -project ios/OmarchyAuto.xcodeproj
 
+      - name: Surface generated-project facts (embeds, testability, edges)
+        run: |
+          pbx=ios/OmarchyAuto.xcodeproj/project.pbxproj
+          {
+            echo "PBX:: PlugIns copy phases (dstSubfolderSpec 13):"
+            grep -B 2 -A 8 "dstSubfolderSpec = 13" "$pbx" | head -24
+            echo "PBX:: target dependency edges:"
+            grep -B 2 -A 2 "PBXTargetDependency" "$pbx" | head -16
+            echo "PBX:: ENABLE_TESTABILITY / DEFINES_MODULE / TEST_HOST:"
+            grep -E "ENABLE_TESTABILITY|DEFINES_MODULE|TEST_HOST =|BUNDLE_LOADER =" "$pbx" | head -12
+          } | while IFS= read -r line; do
+            echo "::notice::${line:0:440}"
+          done
+
       - name: Pick available simulators
         id: sims
         run: |
