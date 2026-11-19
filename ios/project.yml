@@ -69,6 +69,12 @@ targets:
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1,2"
+      configs:
+        Debug:
+          # The Swift driver rejects the app module for @testable import
+          # unless it is compiled with -enable-testing. XcodeGen's Debug
+          # config preset does not reach the app target, so set it here.
+          ENABLE_TESTABILITY: "YES"
 
   OmarchyAutoTests:
     type: bundle.unit-test
