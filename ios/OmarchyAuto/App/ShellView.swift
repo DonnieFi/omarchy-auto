@@ -49,6 +49,37 @@ struct ShellView: View {
         return tile
     }
 
+    /// CI screenshot hook: `-forceOrientation landscape|portrait` rotates the
+    /// app window for the runner's renders. `simctl` has no orientation
+    /// command, so the app drives its own geometry (iOS 16
+    /// requestGeometryUpdate; the landscape orientations are declared in the
+    /// generated Info.plist).
+    static func forcedOrientation(from arguments: [String]) -> UIInterfaceOrientation? {
+        guard let index = arguments.firstIndex(of: "-forceOrientation"),
+              index + 1 < arguments.count
+        else { return nil }
+        switch arguments[index + 1] {
+        case "landscape": return .landscapeLeft
+        case "portrait": return .portrait
+        default: return nil
+        }
+    }
+
+    private func applyForcedOrientationIfNeeded() {
+        guard let orientation = Self.forcedOrientation(from: ProcessInfo.processInfo.arguments)
+        else { return }
+        let mask: UIInterfaceOrientationMask =
+            (orientation == .landscapeLeft) ? .landscapeLeft : .portrait
+        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { error in
+                NSLog("requestGeometryUpdate failed: \(error)")
+            }
+            scene.windows.forEach { window in
+                window.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+            }
+        }
+    }
+
     var body: some View {
         GeometryReader { geo in
             let metrics = ShellMetrics(width: geo.size.width, height: geo.size.height)
@@ -72,6 +103,7 @@ struct ShellView: View {
             }
             .ignoresSafeArea()
             .onAppear {
+                applyForcedOrientationIfNeeded()
                 UIDevice.current.isBatteryMonitoringEnabled = true
                 battery = Self.batteryText(level: UIDevice.current.batteryLevel)
             }

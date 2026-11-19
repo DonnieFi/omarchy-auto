@@ -108,4 +108,24 @@ final class ShellTests: XCTestCase {
             .home
         )
     }
+
+    func testForceOrientationLaunchArgument() {
+        XCTAssertNil(ShellView.forcedOrientation(from: []))
+        XCTAssertNil(
+            ShellView.forcedOrientation(from: ["-forceOrientation"]),
+            "missing value is ignored"
+        )
+        XCTAssertNil(
+            ShellView.forcedOrientation(from: ["-forceOrientation", "bogus"]),
+            "unknown orientations are ignored"
+        )
+        XCTAssertEqual(
+            ShellView.forcedOrientation(from: ["/path/app", "-forceOrientation", "landscape"]),
+            .landscapeLeft
+        )
+        XCTAssertEqual(
+            ShellView.forcedOrientation(from: ["-forceOrientation", "portrait"]),
+            .portrait
+        )
+    }
 }
